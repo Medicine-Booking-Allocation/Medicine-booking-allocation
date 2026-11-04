@@ -4,10 +4,10 @@ from app.models import db
 
 @pytest.fixture
 def client():
-    app = create_app()
-    app.config['TESTING'] = True
-    # Use a temporary in-memory database just for testing so it doesn't mess up team9.db
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:' 
+    app = create_app({
+    'TESTING': True,
+    'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:'
+    })
     
     with app.test_client() as client:
         with app.app_context():
