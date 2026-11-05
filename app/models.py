@@ -35,3 +35,63 @@ class Inventory(db.Model):
     reserved_quantity = db.Column(db.Integer, default=0, nullable=False)
     fulfilled_quantity = db.Column(db.Integer, default=0, nullable=False)
     last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+class Booking(db.Model):
+    __tablename__ = 'bookings'
+
+    booking_id = db.Column(
+        db.String(36), primary_key=True, default=generate_uuid
+    )
+    user_id = db.Column(
+        db.String(36), db.ForeignKey('users.user_id'), nullable=False
+    )
+    medicine_id = db.Column(
+        db.String(36), db.ForeignKey('medicines.medicine_id'), nullable=False
+    )
+
+    # Optional for now; add the ForeignKey after Prescription
+    # is available in the integrated models.
+    prescription_id = db.Column(db.String(36), nullable=True)
+
+    quantity = db.Column(db.Integer, nullable=False)
+    urgency = db.Column(db.String(20), nullable=False)
+    priority_score = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+
+    status = db.Column(db.String(30), nullable=False, default='Requested')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    allocated_at = db.Column(db.DateTime, nullable=True)
+
+
+class PriorityRule(db.Model):
+    __tablename__ = 'priority_rules'
+
+    rule_id = db.Column(
+        db.String(36), primary_key=True, default=generate_uuid
+    )
+    rule_name = db.Column(db.String(100), nullable=False)
+
+    urgency_weight = db.Column(db.Numeric(10, 2), nullable=False)
+    availability_weight = db.Column(db.Numeric(10, 2), nullable=False)
+    patient_history_weight = db.Column(db.Numeric(10, 2), nullable=False)
+
+    version = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='Active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WaitlistEntry(db.Model):
+    __tablename__ = 'waitlist_entries'
+
+    waitlist_id = db.Column(
+        db.String(36), primary_key=True, default=generate_uuid
+    )
+    booking_id = db.Column(
+        db.String(36), db.ForeignKey('bookings.booking_id'), nullable=False
+    )
+
+    priority_score = db.Column(db.Numeric(10, 2), nullable=False)
+    position = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='Active')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

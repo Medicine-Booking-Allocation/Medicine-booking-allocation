@@ -14,8 +14,13 @@ def create_app():
     # Import and register your new blueprints here
     from app.auth import auth_bp
     from app.medicine import medicine_bp
+    from app.booking import booking_bp
+    from app.waitlist import waitlist_bp
+
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(medicine_bp, url_prefix='/api/medicines')
+    app.register_blueprint(booking_bp, url_prefix='/api/bookings')
+    app.register_blueprint(waitlist_bp, url_prefix='/api/waitlist')
 
     with app.app_context():
         db.create_all()
