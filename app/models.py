@@ -112,3 +112,83 @@ class WaitlistEntry(db.Model):
     status = db.Column(db.String(20), nullable=False, default='Active')
 
     created_at = db.Column(db.DateTime, default=utc_now)
+    
+
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    notification_id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=generate_uuid
+    )
+    user_id = db.Column(
+        db.String(36),
+        db.ForeignKey('users.user_id'),
+        nullable=False
+    )
+    event_type = db.Column(db.String(50), nullable=False)
+    message = db.Column(db.String(500), nullable=False)
+    channel = db.Column(
+        db.String(20),
+        nullable=False,
+        default='In-app'
+    )
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default='Pending'
+    )
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now
+    )
+    retry_count = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0
+    )
+    max_retries = db.Column(
+        db.Integer,
+        nullable=False,
+        default=3
+    )
+    last_attempt_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+    audit_id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=generate_uuid
+    )
+    actor_id = db.Column(
+        db.String(36),
+        nullable=True
+    )
+    action = db.Column(
+        db.String(100),
+        nullable=False
+    )
+    entity_type = db.Column(
+        db.String(50),
+        nullable=False
+    )
+    entity_id = db.Column(
+        db.String(36),
+        nullable=True
+    )
+    timestamp = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=utc_now
+    )
+    details = db.Column(
+        db.Text,
+        nullable=True
+    )
+
