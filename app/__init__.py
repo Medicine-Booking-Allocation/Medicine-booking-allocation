@@ -30,11 +30,15 @@ def create_app(test_config=None):
     from app.medicine import medicine_bp
     from app.inventory import inventory_bp
     from app.prescription import prescription_bp
+    from app.booking import booking_bp
+    from app.waitlist import waitlist_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(medicine_bp, url_prefix='/api/medicines')
     app.register_blueprint(inventory_bp, url_prefix='/api/inventory')
     app.register_blueprint(prescription_bp, url_prefix='/api/prescriptions')
+    app.register_blueprint(booking_bp, url_prefix='/api/bookings')
+    app.register_blueprint(waitlist_bp, url_prefix='/api/waitlist')
 
     with app.app_context():
         db.create_all()
