@@ -13,6 +13,7 @@ from app.models import (
     WaitlistEntry
 )
 
+
 @pytest.fixture
 def client():
     app = create_app({
@@ -81,14 +82,23 @@ def login(test_client, email, password):
     assert response.status_code == 200
 
 
+def login_customer(test_client):
+    login(test_client, "customer@pes.edu", "customer123")
+
+
+def login_staff(test_client):
+    login(test_client, "staff@pes.edu", "staff123")
+
+
 def test_booking_allocation_creates_notifications(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
 
+    login_customer(test_client)
+
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "high"
@@ -115,6 +125,9 @@ def test_booking_allocation_creates_notifications(client):
 def test_waitlisted_booking_creates_notifications(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
+
+    login_customer(test_client)
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -126,7 +139,6 @@ def test_waitlisted_booking_creates_notifications(client):
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "medium"
@@ -153,6 +165,9 @@ def test_waitlisted_booking_creates_notifications(client):
 def test_promoted_waitlist_booking_notifies_customer(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
+
+    login_customer(test_client)
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -164,7 +179,6 @@ def test_promoted_waitlist_booking_notifies_customer(client):
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "high"
@@ -173,6 +187,7 @@ def test_promoted_waitlist_booking_notifies_customer(client):
 
     assert response.status_code == 201
     assert response.json["status"] == "Waitlisted"
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -180,6 +195,10 @@ def test_promoted_waitlist_booking_notifies_customer(client):
 
         inventory.available_quantity = 10
         db.session.commit()
+
+    # Promotion is a Pharmacy Staff operation.
+    login_staff(test_client)
+
     response = test_client.post(
         f'/api/waitlist/promote/{medicine_id}'
     )
@@ -199,6 +218,9 @@ def test_promoted_waitlist_booking_notifies_customer(client):
 def test_cancelled_waitlist_booking_notifies_customer(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
+
+    login_customer(test_client)
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -210,7 +232,6 @@ def test_cancelled_waitlist_booking_notifies_customer(client):
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "medium"
@@ -219,12 +240,15 @@ def test_cancelled_waitlist_booking_notifies_customer(client):
 
     assert response.status_code == 201
     assert response.json["status"] == "Waitlisted"
+
     with app.app_context():
         entry = WaitlistEntry.query.filter_by(
             status='Active'
         ).first()
 
         waitlist_id = entry.waitlist_id
+
+    # The Customer who owns the booking cancels it.
     response = test_client.patch(
         f'/api/waitlist/{waitlist_id}/cancel'
     )
@@ -243,10 +267,11 @@ def test_cancelled_waitlist_booking_notifies_customer(client):
 def test_booking_creation_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
 
+    login_customer(test_client)
+
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 2,
             "urgency": "high"
@@ -269,10 +294,11 @@ def test_booking_creation_creates_audit_log(client):
 def test_booking_allocation_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
 
+    login_customer(test_client)
+
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 2,
             "urgency": "high"
@@ -295,6 +321,8 @@ def test_booking_allocation_creates_audit_log(client):
 def test_waitlisted_booking_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
 
+    login_customer(test_client)
+
     with test_client.application.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -306,7 +334,6 @@ def test_waitlisted_booking_creates_audit_log(client):
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 2,
             "urgency": "medium"
@@ -329,6 +356,9 @@ def test_waitlisted_booking_creates_audit_log(client):
 def test_promoted_waitlist_booking_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
+
+    login_customer(test_client)
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -336,10 +366,10 @@ def test_promoted_waitlist_booking_creates_audit_log(client):
 
         inventory.available_quantity = 0
         db.session.commit()
+
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "high"
@@ -350,6 +380,7 @@ def test_promoted_waitlist_booking_creates_audit_log(client):
     assert response.json["status"] == "Waitlisted"
 
     booking_id = response.json["booking_id"]
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -357,12 +388,17 @@ def test_promoted_waitlist_booking_creates_audit_log(client):
 
         inventory.available_quantity = 10
         db.session.commit()
+
+    # Promotion is a Pharmacy Staff operation.
+    login_staff(test_client)
+
     response = test_client.post(
         f'/api/waitlist/promote/{medicine_id}'
     )
 
     assert response.status_code == 200
     assert response.json["promoted_count"] == 1
+
     with app.app_context():
         audit = AuditLog.query.filter_by(
             action='BOOKING_ALLOCATED',
@@ -377,6 +413,9 @@ def test_promoted_waitlist_booking_creates_audit_log(client):
 def test_cancelled_waitlist_booking_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
     app = test_client.application
+
+    login_customer(test_client)
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -384,10 +423,10 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
         inventory.available_quantity = 0
         db.session.commit()
+
     response = test_client.post(
         '/api/bookings/',
         json={
-            "user_id": customer_id,
             "medicine_id": medicine_id,
             "quantity": 5,
             "urgency": "medium"
@@ -396,6 +435,7 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
     assert response.status_code == 201
     assert response.json["status"] == "Waitlisted"
+
     with app.app_context():
         entry = WaitlistEntry.query.filter_by(
             status='Active'
@@ -403,11 +443,13 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
         waitlist_id = entry.waitlist_id
         booking_id = entry.booking_id
+
     response = test_client.patch(
         f'/api/waitlist/{waitlist_id}/cancel'
     )
 
     assert response.status_code == 200
+
     with app.app_context():
         audit = AuditLog.query.filter_by(
             action='BOOKING_CANCELLED',

@@ -2,6 +2,7 @@
 from flask import Blueprint, request, jsonify, session
 from app.models import db, Prescription, User, utc_now
 from app.auth_utils import role_required
+from app.notification import create_notification
 
 prescription_bp = Blueprint('prescription', __name__)
 
@@ -48,7 +49,28 @@ def submit_prescription():
     )
 
     db.session.add(prescription)
-    db.session.commit()
+    # Find all active Pharmacy Staff members.
+    active_staff = User.query.filter_by(
+        role='Pharmacy Staff',
+        account_status='Active'
+    ).all()
+
+    # Notify each active Pharmacy Staff member.
+    for staff in active_staff:
+        create_notification(
+            user_id=staff.user_id,
+            event_type='Prescription',
+            message='A customer has submitted a prescription for review.',
+            channel='In-app',
+            commit=False
+        )
+
+    # Save the prescription and notifications together.
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     return jsonify({
         "message": "Prescription submitted successfully",
@@ -133,7 +155,27 @@ def update_prescription_status(prescription_id):
     if new_status == 'Verified':
         prescription.verified_at = utc_now()
 
-    db.session.commit()
+    # Select the notification event based on the new status.
+    if new_status == 'Rejected':
+        event_type = 'Rejection'
+    else:
+        event_type = 'Prescription'
+
+    # Notify the customer who submitted the prescription.
+    create_notification(
+        user_id=prescription.user_id,
+        event_type=event_type,
+        message=f'Your prescription status has been updated to {new_status}.',
+        channel='In-app',
+        commit=False
+    )
+
+    # Save the status update and notification together.
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     return jsonify({
         "message": "Prescription status updated successfully",

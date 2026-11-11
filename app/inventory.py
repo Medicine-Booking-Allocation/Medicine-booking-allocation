@@ -1,7 +1,8 @@
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from app.models import db, Medicine, Inventory, utc_now
 from app.auth_utils import role_required
+from app.audit_utils import record_audit
 
 inventory_bp = Blueprint('inventory', __name__)
 
@@ -36,9 +37,18 @@ def add_stock():
             fulfilled_quantity=0
         )
         db.session.add(inventory)
+        db.session.flush()
 
     inventory.available_quantity += quantity
     inventory.last_updated_at = utc_now()
+
+    record_audit(
+        actor_id=session.get('user_id'),
+        action='INVENTORY_ADDED',
+        entity_type='Inventory',
+        entity_id=inventory.inventory_id,
+        details=f"Added {quantity} units for medicine {medicine.medicine_id}."
+    )
 
     db.session.commit()
 
@@ -50,6 +60,7 @@ def add_stock():
 
 
 @inventory_bp.route('/reserve', methods=['POST'])
+@role_required('Pharmacy Staff', 'Administrator')
 def reserve_stock():
     data = request.get_json()
 
@@ -75,6 +86,14 @@ def reserve_stock():
     inventory.reserved_quantity += quantity
     inventory.last_updated_at = utc_now()
 
+    record_audit(
+        actor_id=session.get('user_id'),
+        action='INVENTORY_RESERVED',
+        entity_type='Inventory',
+        entity_id=inventory.inventory_id,
+        details=f"Reserved {quantity} units for medicine {data['medicine_id']}."
+    )
+
     db.session.commit()
 
     return jsonify({
@@ -85,6 +104,7 @@ def reserve_stock():
 
 
 @inventory_bp.route('/fulfil', methods=['POST'])
+@role_required('Pharmacy Staff', 'Administrator')
 def fulfil_stock():
     data = request.get_json()
 
@@ -110,6 +130,14 @@ def fulfil_stock():
     inventory.fulfilled_quantity += quantity
     inventory.last_updated_at = utc_now()
 
+    record_audit(
+        actor_id=session.get('user_id'),
+        action='INVENTORY_FULFILLED',
+        entity_type='Inventory',
+        entity_id=inventory.inventory_id,
+        details=f"Fulfilled {quantity} units for medicine {data['medicine_id']}."
+    )
+
     db.session.commit()
 
     return jsonify({
@@ -120,6 +148,7 @@ def fulfil_stock():
 
 
 @inventory_bp.route('/release', methods=['POST'])
+@role_required('Pharmacy Staff', 'Administrator')
 def release_stock():
     data = request.get_json()
 
@@ -144,6 +173,14 @@ def release_stock():
     inventory.reserved_quantity -= quantity
     inventory.available_quantity += quantity
     inventory.last_updated_at = utc_now()
+
+    record_audit(
+        actor_id=session.get('user_id'),
+        action='INVENTORY_RELEASED',
+        entity_type='Inventory',
+        entity_id=inventory.inventory_id,
+        details=f"Released {quantity} units for medicine {data['medicine_id']}."
+    )
 
     db.session.commit()
 

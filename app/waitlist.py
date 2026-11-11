@@ -1,13 +1,16 @@
-from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models import (
-    db, Booking, Medicine, Inventory, WaitlistEntry
+    db, User, Booking, Medicine, Inventory, WaitlistEntry, utc_now
 )
 from app.priority import rank_bookings
+from app.notification import create_notification
+from app.audit_utils import record_audit
+from app.auth_utils import role_required
 
 waitlist_bp = Blueprint("waitlist", __name__)
+
 
 def update_waitlist_positions(medicine_id):
     """
@@ -15,6 +18,7 @@ def update_waitlist_positions(medicine_id):
     Highest priority comes first.
     Earlier booking time breaks ties.
     """
+
     entries = (
         db.session.query(WaitlistEntry, Booking)
         .join(
@@ -121,9 +125,33 @@ def promote_waitlisted_bookings(medicine_id):
             inventory.reserved_quantity += booking.quantity
 
             booking.status = "Allocated"
-            booking.allocated_at = datetime.utcnow()
+            booking.allocated_at = utc_now()
 
             entry.status = "Promoted"
+
+            # Notify the customer that their waitlisted booking is allocated.
+            create_notification(
+                user_id=booking.user_id,
+                event_type='Allocation',
+                message=(
+                    'Your waitlisted booking has been '
+                    'successfully allocated.'
+                ),
+                channel='In-app',
+                commit=False
+            )
+
+            record_audit(
+                actor_id=session.get('user_id'),
+                action='BOOKING_ALLOCATED',
+                entity_type='Booking',
+                entity_id=booking.booking_id,
+                details=(
+                    f"Waitlisted booking promoted and allocated; "
+                    f"quantity={booking.quantity}; "
+                    f"medicine_id={medicine_id}"
+                )
+            )
 
             promoted.append({
                 "booking_id": booking.booking_id,
@@ -142,7 +170,8 @@ def promote_waitlisted_bookings(medicine_id):
     except SQLAlchemyError:
         db.session.rollback()
         raise
-    
+
+
 def cancel_waitlist_entry(waitlist_id):
     """
     Cancel an active waitlist entry and update its booking status.
@@ -168,6 +197,27 @@ def cancel_waitlist_entry(waitlist_id):
         entry.status = "Cancelled"
         booking.status = "Cancelled"
 
+        # Notify the customer that their waitlisted booking was cancelled.
+        create_notification(
+            user_id=booking.user_id,
+            event_type='Cancellation',
+            message='Your waitlisted booking has been cancelled.',
+            channel='In-app',
+            commit=False
+        )
+
+        record_audit(
+            actor_id=session.get('user_id'),
+            action='BOOKING_CANCELLED',
+            entity_type='Booking',
+            entity_id=booking.booking_id,
+            details=(
+                f"Waitlisted booking cancelled; "
+                f"quantity={booking.quantity}; "
+                f"medicine_id={booking.medicine_id}"
+            )
+        )
+
         update_waitlist_positions(booking.medicine_id)
 
         db.session.commit()
@@ -183,9 +233,46 @@ def cancel_waitlist_entry(waitlist_id):
         db.session.rollback()
         raise
 
+
 @waitlist_bp.route("/<waitlist_id>/cancel", methods=["PATCH"])
+@role_required('Customer', 'Pharmacy Staff', 'Administrator')
 def cancel_waitlist(waitlist_id):
     """API endpoint to cancel an active waitlist entry."""
+
+    # Find the active entry before attempting cancellation.
+    entry = WaitlistEntry.query.filter_by(
+        waitlist_id=waitlist_id,
+        status="Active"
+    ).first()
+
+    if not entry:
+        return jsonify({
+            "error": "Active waitlist entry not found"
+        }), 404
+
+    booking = Booking.query.filter_by(
+        booking_id=entry.booking_id
+    ).first()
+
+    if not booking:
+        return jsonify({
+            "error": "Associated booking not found"
+        }), 404
+
+    # Customers can cancel only their own waitlist entries.
+    current_user_id = session.get('user_id')
+    current_user = User.query.filter_by(
+        user_id=current_user_id
+    ).first()
+
+    if current_user and current_user.role == 'Customer':
+        if booking.user_id != current_user_id:
+            return jsonify({
+                "error": (
+                    "You are not authorized to cancel "
+                    "this waitlist entry"
+                )
+            }), 403
 
     try:
         result, error = cancel_waitlist_entry(waitlist_id)
@@ -199,19 +286,22 @@ def cancel_waitlist(waitlist_id):
         }), 200
 
     except SQLAlchemyError:
+        db.session.rollback()
+
         return jsonify({
             "error": "Database error while cancelling waitlist entry"
         }), 500
 
+
 @waitlist_bp.route("/", methods=["GET"])
+@role_required('Pharmacy Staff', 'Administrator')
 def get_waitlist():
     """
     Retrieve waitlist entries.
 
     Optional query parameters:
     - medicine_id: Filter by a particular medicine.
-    - status: Filter by waitlist status (Active, Promoted,
-      Cancelled, Fulfilled).
+    - status: Filter by a particular waitlist status.
 
     Defaults to displaying active entries.
     """
@@ -219,7 +309,12 @@ def get_waitlist():
     medicine_id = request.args.get("medicine_id")
     status = request.args.get("status", "Active").strip()
 
-    valid_statuses = ["Active", "Promoted", "Cancelled", "Fulfilled"]
+    valid_statuses = [
+        "Active",
+        "Promoted",
+        "Cancelled",
+        "Fulfilled"
+    ]
 
     if status not in valid_statuses:
         return jsonify({
@@ -272,8 +367,10 @@ def get_waitlist():
         "total_entries": len(results),
         "waitlist": results
     }), 200
-    
+
+
 @waitlist_bp.route("/promote/<medicine_id>", methods=["POST"])
+@role_required('Pharmacy Staff', 'Administrator')
 def promote_waitlist(medicine_id):
     """Promote eligible bookings after stock replenishment."""
 
@@ -287,6 +384,8 @@ def promote_waitlist(medicine_id):
         }), 200
 
     except SQLAlchemyError:
+        db.session.rollback()
+
         return jsonify({
             "error": "Database error during waitlist promotion"
         }), 500
