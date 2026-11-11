@@ -1,11 +1,19 @@
+
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 db = SQLAlchemy()
 
+
 def generate_uuid():
     return str(uuid.uuid4())
+
+
+def utc_now():
+    # Store UTC timestamps as naive datetimes to match existing DB columns.
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -16,7 +24,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(30), nullable=False)
     account_status = db.Column(db.String(20), default='Active')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utc_now)
+
 
 class Medicine(db.Model):
     __tablename__ = 'medicines'
@@ -27,6 +36,7 @@ class Medicine(db.Model):
     prescription_required = db.Column(db.Boolean, default=False, nullable=False)
     status = db.Column(db.String(20), default='Active')
 
+
 class Inventory(db.Model):
     __tablename__ = 'inventory'
     inventory_id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
@@ -34,4 +44,15 @@ class Inventory(db.Model):
     available_quantity = db.Column(db.Integer, default=0, nullable=False)
     reserved_quantity = db.Column(db.Integer, default=0, nullable=False)
     fulfilled_quantity = db.Column(db.Integer, default=0, nullable=False)
-    last_updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+
+class Prescription(db.Model):
+    __tablename__ = 'prescriptions'
+
+    prescription_id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.user_id'), nullable=False)
+    prescription_reference = db.Column(db.String(150), nullable=False)
+    prescription_status = db.Column(db.String(20), default='Submitted', nullable=False)
+    submitted_at = db.Column(db.DateTime, default=utc_now, nullable=False)
+    verified_at = db.Column(db.DateTime, nullable=True)
