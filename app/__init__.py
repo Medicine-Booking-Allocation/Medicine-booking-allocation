@@ -18,7 +18,8 @@ def create_app(test_config=None):
         'SQLALCHEMY_TRACK_MODIFICATIONS': False,
         'SECRET_KEY': os.environ.get(
             'SECRET_KEY', 'project47-development-key'
-        )
+        ),
+        'NOTIFICATION_MAX_RETRIES': 3
     })
 
     if test_config:
@@ -32,6 +33,7 @@ def create_app(test_config=None):
     from app.prescription import prescription_bp
     from app.booking import booking_bp
     from app.waitlist import waitlist_bp
+    from app.notification import notification_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(medicine_bp, url_prefix='/api/medicines')
@@ -39,6 +41,7 @@ def create_app(test_config=None):
     app.register_blueprint(prescription_bp, url_prefix='/api/prescriptions')
     app.register_blueprint(booking_bp, url_prefix='/api/bookings')
     app.register_blueprint(waitlist_bp, url_prefix='/api/waitlist')
+    app.register_blueprint(notification_bp,url_prefix='/api/notifications')
 
     with app.app_context():
         db.create_all()
