@@ -10,7 +10,9 @@ from app.models import (
     Inventory,
     Notification,
     AuditLog,
-    WaitlistEntry
+    WaitlistEntry,
+    Booking,
+    Prescription
 )
 
 
@@ -459,3 +461,172 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
         assert audit is not None
         assert 'Waitlisted booking cancelled' in audit.details
+
+
+def test_staff_can_fulfil_allocated_booking(client):
+    test_client, customer_id, medicine_id, staff_id = client
+    app = test_client.application
+
+    login_customer(test_client)
+
+    response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "high"
+        }
+    )
+
+    assert response.status_code == 201
+    booking_id = response.json["booking_id"]
+
+    login_staff(test_client)
+
+    response = test_client.post(
+        f'/api/bookings/{booking_id}/fulfil'
+    )
+
+    assert response.status_code == 200
+    assert response.json["status"] == "Fulfilled"
+
+    with app.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory.reserved_quantity == 0
+        assert inventory.fulfilled_quantity == 5
+
+
+def test_fulfilment_requires_verified_prescription(client):
+    test_client, customer_id, medicine_id, staff_id = client
+    app = test_client.application
+
+    with app.app_context():
+        medicine = db.session.get(Medicine, medicine_id)
+        medicine.prescription_required = True
+
+        prescription = Prescription(
+            user_id=customer_id,
+            prescription_reference="TEST-PRESCRIPTION-001",
+            prescription_status="Submitted"
+        )
+
+        db.session.add(prescription)
+        db.session.commit()
+        prescription_id = prescription.prescription_id
+
+    login_customer(test_client)
+
+    response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "high",
+            "prescription_id": prescription_id
+        }
+    )
+
+    assert response.status_code == 201
+    booking_id = response.json["booking_id"]
+
+    # Simulate an allocated booking to test the prescription safeguard.
+    with app.app_context():
+        booking = db.session.get(Booking, booking_id)
+        booking.status = "Allocated"
+        db.session.commit()
+
+    login_staff(test_client)
+    response = test_client.post(
+        f'/api/bookings/{booking_id}/fulfil'
+    )
+
+    assert response.status_code == 403
+    assert "verified prescription" in response.json["error"].lower()
+
+    with app.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory.available_quantity == 100
+        assert inventory.reserved_quantity == 0
+        assert inventory.fulfilled_quantity == 0
+
+
+def test_customer_can_cancel_allocated_booking_and_release_stock(client):
+    test_client, customer_id, medicine_id, staff_id = client
+    app = test_client.application
+
+    login_customer(test_client)
+
+    response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "high"
+        }
+    )
+
+    assert response.status_code == 201
+    booking_id = response.json["booking_id"]
+
+    response = test_client.patch(
+        f'/api/bookings/{booking_id}/cancel'
+    )
+
+    assert response.status_code == 200
+    assert response.json["status"] == "Cancelled"
+
+    with app.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory.available_quantity == 100
+        assert inventory.reserved_quantity == 0
+
+
+def test_fulfilled_booking_cannot_be_cancelled_again(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    login_customer(test_client)
+
+    response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "high"
+        }
+    )
+
+    assert response.status_code == 201
+    booking_id = response.json["booking_id"]
+
+    login_staff(test_client)
+
+    response = test_client.post(
+        f'/api/bookings/{booking_id}/fulfil'
+    )
+
+    assert response.status_code == 200
+
+    login_customer(test_client)
+
+    response = test_client.patch(
+        f'/api/bookings/{booking_id}/cancel'
+    )
+
+    assert response.status_code == 409
+
+    with test_client.application.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory.reserved_quantity == 0
+        assert inventory.fulfilled_quantity == 5

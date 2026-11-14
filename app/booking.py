@@ -8,6 +8,7 @@ from app.models import (
     Inventory,
     Booking,
     WaitlistEntry,
+    Prescription,
     utc_now
 )
 from app.auth_utils import role_required
@@ -138,11 +139,29 @@ def create_booking():
             "error": "Medicine not found or inactive"
         }), 404
 
-    # Prescription-required medicines need a prescription ID.
-    if medicine.prescription_required and not prescription_id:
-        return jsonify({
-            "error": "A prescription is required for this medicine"
-        }), 400
+    # Validate prescription ownership and existence.
+    if medicine.prescription_required:
+        if not prescription_id:
+            return jsonify({
+                "error": "A prescription is required for this medicine"
+            }), 400
+
+        prescription = db.session.get(Prescription, prescription_id)
+
+        if not prescription:
+            return jsonify({
+                "error": "Prescription not found"
+            }), 404
+
+        if prescription.user_id != user_id:
+            return jsonify({
+                "error": "You can only use your own prescription"
+            }), 403
+
+        if prescription.prescription_status == "Rejected":
+            return jsonify({
+                "error": "Rejected prescriptions cannot be used"
+            }), 400
 
     try:
         # Get the medicine's inventory record.
@@ -373,3 +392,183 @@ def get_booking(booking_id):
             if booking.allocated_at else None
         )
     }), 200
+
+
+
+@booking_bp.route("/<booking_id>/fulfil", methods=["POST"])
+@role_required('Pharmacy Staff', 'Administrator')
+def fulfil_booking(booking_id):
+    """Fulfil an allocated booking after prescription verification."""
+
+    try:
+        booking = Booking.query.filter_by(
+            booking_id=booking_id
+        ).with_for_update().first()
+
+        if not booking:
+            return jsonify({"error": "Booking not found"}), 404
+
+        if booking.status != "Allocated":
+            return jsonify({
+                "error": "Only allocated bookings can be fulfilled"
+            }), 409
+
+        medicine = db.session.get(Medicine, booking.medicine_id)
+
+        if not medicine:
+            return jsonify({"error": "Medicine not found"}), 404
+
+        if medicine.prescription_required:
+            if not booking.prescription_id:
+                return jsonify({
+                    "error": "A verified prescription is required"
+                }), 400
+
+            prescription = db.session.get(
+                Prescription, booking.prescription_id
+            )
+
+            if (
+                not prescription
+                or prescription.user_id != booking.user_id
+                or prescription.prescription_status != "Verified"
+                or not prescription.verified_at
+            ):
+                return jsonify({
+                    "error": "Booking cannot be fulfilled without a verified prescription"
+                }), 403
+
+        inventory = Inventory.query.filter_by(
+            medicine_id=booking.medicine_id
+        ).with_for_update().first()
+
+        if not inventory or inventory.reserved_quantity < booking.quantity:
+            return jsonify({
+                "error": "Insufficient reserved inventory for this booking"
+            }), 409
+
+        inventory.reserved_quantity -= booking.quantity
+        inventory.fulfilled_quantity += booking.quantity
+        inventory.last_updated_at = utc_now()
+        booking.status = "Fulfilled"
+
+        record_audit(
+            actor_id=session.get('user_id'),
+            action='BOOKING_FULFILLED',
+            entity_type='Booking',
+            entity_id=booking.booking_id,
+            details=f"Booking fulfilled; quantity={booking.quantity}; medicine_id={booking.medicine_id}"
+        )
+
+        create_notification(
+            user_id=booking.user_id,
+            event_type='Fulfilment',
+            message='Your medicine booking has been fulfilled.',
+            channel='In-app',
+            commit=False
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Booking fulfilled successfully",
+            "booking_id": booking.booking_id,
+            "status": booking.status,
+            "reserved_quantity": inventory.reserved_quantity,
+            "fulfilled_quantity": inventory.fulfilled_quantity
+        }), 200
+
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            "error": "Database error while fulfilling booking"
+        }), 500
+
+
+@booking_bp.route("/<booking_id>/cancel", methods=["PATCH"])
+@role_required('Customer', 'Pharmacy Staff', 'Administrator')
+def cancel_booking(booking_id):
+    """Cancel a booking and release reserved stock when allocated."""
+
+    try:
+        booking = Booking.query.filter_by(
+            booking_id=booking_id
+        ).with_for_update().first()
+
+        if not booking:
+            return jsonify({"error": "Booking not found"}), 404
+
+        current_user_id = session.get('user_id')
+        current_user = User.query.filter_by(
+            user_id=current_user_id
+        ).first()
+
+        if current_user and current_user.role == 'Customer':
+            if booking.user_id != current_user_id:
+                return jsonify({
+                    "error": "You are not authorized to cancel this booking"
+                }), 403
+
+        if booking.status == "Waitlisted":
+            return jsonify({
+                "error": "Use the waitlist cancellation endpoint for waitlisted bookings"
+            }), 409
+
+        if booking.status not in ("Requested", "Allocated"):
+            return jsonify({
+                "error": "This booking cannot be cancelled in its current status"
+            }), 409
+
+        inventory = None
+
+        if booking.status == "Allocated":
+            inventory = Inventory.query.filter_by(
+                medicine_id=booking.medicine_id
+            ).with_for_update().first()
+
+            if not inventory or inventory.reserved_quantity < booking.quantity:
+                return jsonify({
+                    "error": "Insufficient reserved inventory to release this booking"
+                }), 409
+
+            inventory.reserved_quantity -= booking.quantity
+            inventory.available_quantity += booking.quantity
+            inventory.last_updated_at = utc_now()
+
+        booking.status = "Cancelled"
+
+        record_audit(
+            actor_id=current_user_id,
+            action='BOOKING_CANCELLED',
+            entity_type='Booking',
+            entity_id=booking.booking_id,
+            details=f"Booking cancelled; quantity={booking.quantity}; medicine_id={booking.medicine_id}"
+        )
+
+        create_notification(
+            user_id=booking.user_id,
+            event_type='Cancellation',
+            message='Your medicine booking has been cancelled.',
+            channel='In-app',
+            commit=False
+        )
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Booking cancelled successfully",
+            "booking_id": booking.booking_id,
+            "status": booking.status,
+            "available_quantity": (
+                inventory.available_quantity if inventory else None
+            ),
+            "reserved_quantity": (
+                inventory.reserved_quantity if inventory else None
+            )
+        }), 200
+
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            "error": "Database error while cancelling booking"
+        }), 500
