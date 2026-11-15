@@ -1,8 +1,9 @@
-
 from flask import Blueprint, request, jsonify, session
 from app.models import db, Medicine, Inventory, utc_now
 from app.auth_utils import role_required
 from app.audit_utils import record_audit
+from sqlalchemy.exc import SQLAlchemyError
+from app.waitlist import promote_waitlisted_bookings
 
 inventory_bp = Blueprint('inventory', __name__)
 
@@ -52,10 +53,25 @@ def add_stock():
 
     db.session.commit()
 
+    try:
+        promoted = promote_waitlisted_bookings(medicine.medicine_id)
+
+    except SQLAlchemyError:
+        db.session.rollback()
+
+        return jsonify({
+            "message": "Stock added successfully, but waitlist promotion failed.",
+            "medicine_id": medicine.medicine_id,
+            "available_quantity": inventory.available_quantity,
+            "promotion_error": True
+        }), 500
+
     return jsonify({
         "message": "Stock added successfully",
         "medicine_id": medicine.medicine_id,
-        "available_quantity": inventory.available_quantity
+        "available_quantity": inventory.available_quantity,
+        "promoted_count": len(promoted),
+        "promoted_bookings": promoted
     }), 200
 
 
