@@ -8,13 +8,15 @@ from app.models import (
     Inventory,
     Booking,
     WaitlistEntry,
+    PriorityRule,
+    PriorityEvaluation,
     utc_now
 )
+
 from app.auth_utils import role_required
 from app.notification import create_notification
-from app.priority import calculate_priority_score, rank_bookings
+from app.priority import (calculate_priority_score,rank_bookings,DEFAULT_WEIGHTS)
 from app.audit_utils import record_audit
-
 
 booking_bp = Blueprint("booking", __name__)
 
@@ -24,7 +26,6 @@ URGENCY_SCORES = {
     "medium": 50,
     "low": 25
 }
-
 
 def update_waitlist_positions(medicine_id):
     """
@@ -150,12 +151,44 @@ def create_booking():
             medicine_id=medicine_id
         ).first()
 
-        # Temporary neutral scores for factors whose policies
-        # have not yet been finalized by the project team.
+        # Load the latest active priority rule.
+        active_rule = PriorityRule.query.filter_by(
+            status="Active"
+        ).order_by(
+            PriorityRule.created_at.desc()
+        ).first()
+
+        if active_rule:
+            weights = {
+                "urgency": float(active_rule.urgency_weight),
+                "availability": float(active_rule.availability_weight),
+                "patient_history": float(
+                    active_rule.patient_history_weight
+                )
+            }
+
+            rule_id = active_rule.rule_id
+            rule_version = active_rule.version
+
+        else:
+            # Use provisional defaults if no active rule exists.
+            weights = DEFAULT_WEIGHTS.copy()
+            rule_id = None
+            rule_version = "default-1"
+
+        # These two scores remain provisional until the team
+        # finalizes their calculation policies.
+        factor_scores = {
+            "urgency": URGENCY_SCORES[urgency],
+            "availability": 50,
+            "patient_history": 50
+        }
+
         priority_score = calculate_priority_score(
-            urgency_score=URGENCY_SCORES[urgency],
-            availability_score=50,
-            patient_history_score=50
+            urgency_score=factor_scores["urgency"],
+            availability_score=factor_scores["availability"],
+            patient_history_score=factor_scores["patient_history"],
+            weights=weights
         )
 
         booking = Booking(
@@ -167,9 +200,27 @@ def create_booking():
             priority_score=priority_score,
             status="Requested"
         )
-
+        
+        # Save booking first so its ID is generated.
         db.session.add(booking)
         db.session.flush()
+        
+        # Save the exact priority factors and rule version
+        # used to calculate this booking's priority score.
+        priority_evaluation = PriorityEvaluation(
+            booking_id=booking.booking_id,
+            rule_id=rule_id,
+            rule_version=rule_version,
+            urgency_score=factor_scores["urgency"],
+            availability_score=factor_scores["availability"],
+            patient_history_score=factor_scores["patient_history"],
+            urgency_weight=weights["urgency"],
+            availability_weight=weights["availability"],
+            patient_history_weight=weights["patient_history"],
+            final_score=priority_score
+        )
+
+        db.session.add(priority_evaluation)
 
         record_audit(
             actor_id=user_id,

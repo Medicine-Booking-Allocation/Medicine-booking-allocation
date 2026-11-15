@@ -1,8 +1,7 @@
-
 import pytest
 from werkzeug.security import generate_password_hash
-
 from app import create_app
+
 from app.models import (
     db,
     User,
@@ -10,9 +9,9 @@ from app.models import (
     Inventory,
     Notification,
     AuditLog,
-    WaitlistEntry
+    WaitlistEntry,
+    PriorityEvaluation
 )
-
 
 @pytest.fixture
 def client():
@@ -570,4 +569,42 @@ def test_waitlist_promotes_higher_priority_booking_first(client):
 
     assert high_response.json["booking_id"] in promoted_ids
     assert low_response.json["booking_id"] not in promoted_ids
+
+
+def test_booking_saves_priority_evaluation(client):
+    test_client, customer_id, medicine_id, staff_id = client
+    app = test_client.application
+
+    login_customer(test_client)
+
+    response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "high"
+        }
+    )
+
+    assert response.status_code == 201
+
+    booking_id = response.json["booking_id"]
+
+    with app.app_context():
+        evaluation = PriorityEvaluation.query.filter_by(
+            booking_id=booking_id
+        ).first()
+
+        assert evaluation is not None
+        assert evaluation.rule_version == "default-1"
+
+        assert float(evaluation.urgency_score) == 75
+        assert float(evaluation.availability_score) == 50
+        assert float(evaluation.patient_history_score) == 50
+
+        assert float(evaluation.urgency_weight) == 0.4
+        assert float(evaluation.availability_weight) == 0.3
+        assert float(evaluation.patient_history_weight) == 0.3
+
+        assert float(evaluation.final_score) == 60
 

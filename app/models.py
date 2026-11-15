@@ -95,7 +95,43 @@ class PriorityRule(db.Model):
     version = db.Column(db.String(20), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='Active')
     created_at = db.Column(db.DateTime, default=utc_now)
+    
 
+class PriorityEvaluation(db.Model):
+    __tablename__ = 'priority_evaluations'
+
+    evaluation_id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=generate_uuid
+    )
+
+    booking_id = db.Column(
+        db.String(36),
+        db.ForeignKey('bookings.booking_id'),
+        nullable=False,
+        unique=True
+    )
+
+    rule_id = db.Column(
+        db.String(36),
+        db.ForeignKey('priority_rules.rule_id'),
+        nullable=True
+    )
+
+    rule_version = db.Column(db.String(20), nullable=False)
+
+    urgency_score = db.Column(db.Numeric(5, 2), nullable=False)
+    availability_score = db.Column(db.Numeric(5, 2), nullable=False)
+    patient_history_score = db.Column(db.Numeric(5, 2), nullable=False)
+
+    urgency_weight = db.Column(db.Numeric(10, 4), nullable=False)
+    availability_weight = db.Column(db.Numeric(10, 4), nullable=False)
+    patient_history_weight = db.Column(db.Numeric(10, 4), nullable=False)
+
+    final_score = db.Column(db.Numeric(10, 2), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=utc_now, nullable=False)
 
 class WaitlistEntry(db.Model):
     __tablename__ = 'waitlist_entries'
