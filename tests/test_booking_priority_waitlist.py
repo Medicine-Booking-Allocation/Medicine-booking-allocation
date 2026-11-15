@@ -459,3 +459,115 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
         assert audit is not None
         assert 'Waitlisted booking cancelled' in audit.details
+        
+
+def test_higher_priority_booking_gets_first_waitlist_position(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    login_customer(test_client)
+
+    with test_client.application.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+        inventory.available_quantity = 0
+        db.session.commit()
+
+    low_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 2,
+            "urgency": "low"
+        }
+    )
+    assert low_response.status_code == 201
+
+    high_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 2,
+            "urgency": "high"
+        }
+    )
+    assert high_response.status_code == 201
+
+    login_staff(test_client)
+
+    response = test_client.get(
+        f'/api/waitlist/?medicine_id={medicine_id}'
+    )
+
+    assert response.status_code == 200
+
+    entries = response.json["waitlist"]
+
+    positions = {
+        entry["urgency"]: entry["position"]
+        for entry in entries
+    }
+
+    assert positions["high"] == 1
+    assert positions["low"] == 2
+    
+
+def test_waitlist_promotes_higher_priority_booking_first(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    login_customer(test_client)
+
+    with test_client.application.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+        inventory.available_quantity = 0
+        db.session.commit()
+
+    # Create a low-priority booking first.
+    low_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 2,
+            "urgency": "low"
+        }
+    )
+    assert low_response.status_code == 201
+
+    # Create a high-priority booking second.
+    high_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 2,
+            "urgency": "high"
+        }
+    )
+    assert high_response.status_code == 201
+
+    # Replenish stock for only one booking.
+    with test_client.application.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+        inventory.available_quantity = 2
+        db.session.commit()
+
+    login_staff(test_client)
+
+    response = test_client.post(
+        f'/api/waitlist/promote/{medicine_id}'
+    )
+
+    assert response.status_code == 200
+    assert response.json["promoted_count"] == 1
+
+    promoted_ids = [
+        item["booking_id"]
+        for item in response.json["promoted_bookings"]
+    ]
+
+    assert high_response.json["booking_id"] in promoted_ids
+    assert low_response.json["booking_id"] not in promoted_ids
+
