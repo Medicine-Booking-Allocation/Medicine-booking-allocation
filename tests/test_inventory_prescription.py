@@ -1,11 +1,18 @@
 import pytest
 from werkzeug.security import generate_password_hash
 from app import create_app
-from app.models import (
-    db, User, Medicine, Inventory,
-    Prescription, Notification, AuditLog
-)
 
+from app.models import (
+    db,
+    User,
+    Medicine,
+    Inventory,
+    Prescription,
+    Booking,
+    WaitlistEntry,
+    Notification,
+    AuditLog
+)
 
 @pytest.fixture
 def client():
@@ -530,3 +537,281 @@ def test_release_stock_creates_audit_log(client):
 
         assert audit is not None
         assert audit.actor_id == staff_id
+
+
+def create_prescription_booking(
+    test_client,
+    customer_id,
+    medicine_id
+):
+    login(test_client, "customer@pes.edu", "customer123")
+
+    response = test_client.post(
+        '/api/prescriptions/submit',
+        json={
+            "prescription_reference": "INTEGRATION-TEST-001"
+        }
+    )
+
+    assert response.status_code == 201
+    prescription_id = response.json['prescription_id']
+
+    with test_client.application.app_context():
+        medicine = db.session.get(Medicine, medicine_id)
+        medicine.prescription_required = True
+
+        booking = Booking(
+            user_id=customer_id,
+            medicine_id=medicine_id,
+            prescription_id=prescription_id,
+            quantity=2,
+            urgency="High",
+            priority_score=80,
+            status="Requested"
+        )
+
+        db.session.add(booking)
+        db.session.commit()
+
+        booking_id = booking.booking_id
+
+    return prescription_id, booking_id
+
+
+def verify_prescription(test_client, prescription_id):
+    login(test_client, "staff@pes.edu", "staff123")
+
+    review_response = test_client.patch(
+        f'/api/prescriptions/{prescription_id}/status',
+        json={"prescription_status": "Under Review"}
+    )
+
+    assert review_response.status_code == 200
+
+    return test_client.patch(
+        f'/api/prescriptions/{prescription_id}/status',
+        json={"prescription_status": "Verified"}
+    )
+
+
+def test_verified_prescription_allocates_pending_booking(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client,
+        customer_id,
+        medicine_id
+    )
+
+    response = verify_prescription(test_client, prescription_id)
+
+    assert response.status_code == 200
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        entry = WaitlistEntry.query.filter_by(
+            booking_id=booking_id
+        ).first()
+
+        assert booking.status == "Allocated"
+        assert entry is not None
+        assert entry.status == "Promoted"
+        assert inventory.available_quantity == 98
+        assert inventory.reserved_quantity == 2
+
+
+def test_verified_prescription_waitlists_when_stock_unavailable(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client,
+        customer_id,
+        medicine_id
+    )
+
+    with test_client.application.app_context():
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        inventory.available_quantity = 0
+        db.session.commit()
+
+    response = verify_prescription(test_client, prescription_id)
+
+    assert response.status_code == 200
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+
+        entry = WaitlistEntry.query.filter_by(
+            booking_id=booking_id
+        ).first()
+
+        assert booking.status == "Waitlisted"
+        assert entry is not None
+        assert entry.status == "Active"
+
+
+def test_rejected_prescription_does_not_allocate_booking(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client,
+        customer_id,
+        medicine_id
+    )
+
+    login(test_client, "staff@pes.edu", "staff123")
+
+    review_response = test_client.patch(
+        f'/api/prescriptions/{prescription_id}/status',
+        json={"prescription_status": "Under Review"}
+    )
+
+    assert review_response.status_code == 200
+
+    reject_response = test_client.patch(
+        f'/api/prescriptions/{prescription_id}/status',
+        json={"prescription_status": "Rejected"}
+    )
+
+    assert reject_response.status_code == 200
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+
+        entry = WaitlistEntry.query.filter_by(
+            booking_id=booking_id
+        ).first()
+
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert booking.status == "Requested"
+        assert entry is None
+        assert inventory.available_quantity == 100
+        assert inventory.reserved_quantity == 0
+
+
+def test_unverified_prescription_cannot_be_fulfilled(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client, customer_id, medicine_id
+    )
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+        booking.status = "Allocated"
+
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+        inventory.available_quantity = 98
+        inventory.reserved_quantity = 2
+        db.session.commit()
+
+    login(test_client, "staff@pes.edu", "staff123")
+
+    response = test_client.post('/api/inventory/fulfil', json={
+        "medicine_id": medicine_id,
+        "quantity": 2,
+        "booking_id": booking_id
+    })
+
+    assert response.status_code == 403
+    assert b"Prescription must be verified" in response.data
+
+
+def test_verified_unallocated_booking_cannot_be_fulfilled(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client, customer_id, medicine_id
+    )
+
+    response = verify_prescription(test_client, prescription_id)
+    assert response.status_code == 200
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+        booking.status = "Waitlisted"
+
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+        inventory.reserved_quantity = 2
+        db.session.commit()
+
+    login(test_client, "staff@pes.edu", "staff123")
+
+    response = test_client.post('/api/inventory/fulfil', json={
+        "medicine_id": medicine_id,
+        "quantity": 2,
+        "booking_id": booking_id
+    })
+
+    assert response.status_code == 400
+    assert b"Only allocated bookings" in response.data
+
+
+def test_verified_allocated_booking_can_be_fulfilled(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    prescription_id, booking_id = create_prescription_booking(
+        test_client, customer_id, medicine_id
+    )
+
+    response = verify_prescription(test_client, prescription_id)
+    assert response.status_code == 200
+
+    login(test_client, "staff@pes.edu", "staff123")
+
+    response = test_client.post('/api/inventory/fulfil', json={
+        "medicine_id": medicine_id,
+        "quantity": 2,
+        "booking_id": booking_id
+    })
+
+    assert response.status_code == 200
+
+    with test_client.application.app_context():
+        booking = db.session.get(Booking, booking_id)
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert booking.status == "Fulfilled"
+        assert inventory.reserved_quantity == 0
+        assert inventory.fulfilled_quantity == 2
+
+def test_prescription_preserves_medicine_and_dosage(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    login(test_client, "customer@pes.edu", "customer123")
+
+    submit_response = test_client.post(
+        '/api/prescriptions/submit',
+        json={
+            "prescription_reference": "PRES-TEST-100",
+            "prescribed_medicine": "Paracetamol",
+            "prescribed_dosage": "500mg twice daily"
+        }
+    )
+
+    assert submit_response.status_code == 201
+    prescription_id = submit_response.json['prescription_id']
+
+    response = test_client.get(
+        f'/api/prescriptions/{prescription_id}'
+    )
+
+    assert response.status_code == 200
+    assert response.json['prescribed_medicine'] == "Paracetamol"
+    assert response.json['prescribed_dosage'] == "500mg twice daily"

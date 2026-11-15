@@ -11,6 +11,7 @@ from app.models import (
     WaitlistEntry,
     PriorityRule,
     PriorityEvaluation,
+    Prescription,
     utc_now
 )
 
@@ -146,6 +147,23 @@ def create_booking():
             "error": "A prescription is required for this medicine"
         }), 400
 
+    # Validate the supplied prescription, if provided.
+    if prescription_id:
+        prescription = Prescription.query.filter_by(
+            prescription_id=prescription_id
+        ).first()
+
+        if not prescription:
+            return jsonify({
+                "error": "Prescription not found"
+            }), 404
+
+        # Ensure the prescription belongs to the logged-in customer.
+        if prescription.user_id != user_id:
+            return jsonify({
+                "error": "You cannot use another customer's prescription"
+            }), 403
+
     try:
         # Get the medicine's inventory record.
         inventory = Inventory.query.filter_by(
@@ -258,7 +276,8 @@ def create_booking():
                 "priority_score": priority_score,
                 "status": booking.status
             }), 201
-        # Check whether older active waitlist entries exist.
+
+        # Check whether active waitlist entries already exist.
         existing_waitlist = (
             db.session.query(WaitlistEntry)
             .join(
@@ -273,7 +292,7 @@ def create_booking():
             .first()
         )
 
-        # If a queue already exists, join it instead of bypassing it.
+        # Join the existing queue instead of bypassing it.
         if existing_waitlist:
             booking.status = "Waitlisted"
 
@@ -314,6 +333,7 @@ def create_booking():
                 "status": booking.status,
                 "promoted_count": len(promoted)
             }), 201
+
         # Atomically reserve stock only if sufficient quantity exists.
         allocated_rows = 0
 

@@ -49,16 +49,46 @@ class Inventory(db.Model):
     last_updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
 
+
 class Prescription(db.Model):
     __tablename__ = 'prescriptions'
 
-    prescription_id = db.Column(db.String(36), primary_key=True, default=generate_uuid)
-    user_id = db.Column(db.String(36), db.ForeignKey('users.user_id'), nullable=False)
-    prescription_reference = db.Column(db.String(150), nullable=False)
-    prescription_status = db.Column(db.String(20), default='Submitted', nullable=False)
-    submitted_at = db.Column(db.DateTime, default=utc_now, nullable=False)
-    verified_at = db.Column(db.DateTime, nullable=True)
+    prescription_id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=generate_uuid
+    )
+    user_id = db.Column(
+        db.String(36),
+        db.ForeignKey('users.user_id'),
+        nullable=False
+    )
+    prescription_reference = db.Column(
+        db.String(150),
+        nullable=False
+    )
 
+    # Preserve the medicine and dosage as submitted.
+    prescribed_medicine = db.Column(
+        db.String(150),
+        nullable=True
+    )
+    prescribed_dosage = db.Column(
+        db.String(100),
+        nullable=True
+    )
+
+    prescription_status = db.Column(
+        db.String(20),
+        default='Submitted',
+        nullable=False
+    )
+    submitted_at = db.Column(
+        db.DateTime,
+        default=utc_now,
+        nullable=False
+    )
+    verified_at = db.Column(db.DateTime, nullable=True)
 
 class Booking(db.Model):
     __tablename__ = 'bookings'

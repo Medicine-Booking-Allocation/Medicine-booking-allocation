@@ -1,8 +1,22 @@
-
 from flask import Blueprint, request, jsonify, session
-from app.models import db, Prescription, User, utc_now
-from app.auth_utils import role_required
+
+from app.models import (
+    db,
+    Prescription,
+    User,
+    Booking,
+    Medicine,
+    WaitlistEntry,
+    utc_now
+)
+
+from app.waitlist import (
+    promote_waitlisted_bookings,
+    update_waitlist_positions
+)
+
 from app.notification import create_notification
+from app.auth_utils import role_required
 
 prescription_bp = Blueprint('prescription', __name__)
 
@@ -45,6 +59,12 @@ def submit_prescription():
     prescription = Prescription(
         user_id=user.user_id,
         prescription_reference=prescription_reference,
+        prescribed_medicine=(
+            (data.get('prescribed_medicine') or '').strip() or None
+        ),
+        prescribed_dosage=(
+            (data.get('prescribed_dosage') or '').strip() or None
+        ),
         prescription_status='Submitted'
     )
 
@@ -104,11 +124,14 @@ def get_prescription(prescription_id):
         "prescription_reference": prescription.prescription_reference,
         "prescription_status": prescription.prescription_status,
         "submitted_at": prescription.submitted_at.isoformat(),
+        "prescribed_medicine": prescription.prescribed_medicine,
+        "prescribed_dosage": prescription.prescribed_dosage,
         "verified_at": (
             prescription.verified_at.isoformat()
             if prescription.verified_at else None
         )
     }), 200
+
 
 
 @prescription_bp.route('/<prescription_id>/status', methods=['PATCH'])
@@ -155,13 +178,11 @@ def update_prescription_status(prescription_id):
     if new_status == 'Verified':
         prescription.verified_at = utc_now()
 
-    # Select the notification event based on the new status.
     if new_status == 'Rejected':
         event_type = 'Rejection'
     else:
         event_type = 'Prescription'
 
-    # Notify the customer who submitted the prescription.
     create_notification(
         user_id=prescription.user_id,
         event_type=event_type,
@@ -170,9 +191,48 @@ def update_prescription_status(prescription_id):
         commit=False
     )
 
-    # Save the status update and notification together.
     try:
+        if new_status == 'Verified':
+            # Find pending bookings linked to this prescription.
+            pending_bookings = (
+                Booking.query
+                .join(
+                    Medicine,
+                    Booking.medicine_id == Medicine.medicine_id
+                )
+                .filter(
+                    Booking.prescription_id == prescription_id,
+                    Booking.status == 'Requested',
+                    Medicine.prescription_required.is_(True)
+                )
+                .all()
+            )
+
+            affected_medicines = set()
+
+            # Add verified bookings to the existing priority waitlist.
+            for booking in pending_bookings:
+                booking.status = 'Waitlisted'
+
+                db.session.add(WaitlistEntry(
+                    booking_id=booking.booking_id,
+                    priority_score=booking.priority_score,
+                    position=0,
+                    status='Active'
+                ))
+
+                affected_medicines.add(booking.medicine_id)
+
+            db.session.flush()
+
+            # Recalculate positions and promote eligible bookings.
+            for medicine_id in affected_medicines:
+                update_waitlist_positions(medicine_id)
+                promote_waitlisted_bookings(medicine_id)
+
+        # Save status and notification even if there were no bookings.
         db.session.commit()
+
     except Exception:
         db.session.rollback()
         raise
@@ -186,7 +246,6 @@ def update_prescription_status(prescription_id):
             if prescription.verified_at else None
         )
     }), 200
-
 
 @prescription_bp.route('/user/<user_id>', methods=['GET'])
 @role_required('Customer', 'Pharmacy Staff', 'Administrator')
@@ -214,6 +273,8 @@ def get_user_prescriptions(user_id):
         results.append({
             "prescription_id": prescription.prescription_id,
             "prescription_reference": prescription.prescription_reference,
+            "prescribed_medicine": prescription.prescribed_medicine,
+            "prescribed_dosage": prescription.prescribed_dosage,
             "prescription_status": prescription.prescription_status,
             "submitted_at": prescription.submitted_at.isoformat(),
             "verified_at": (

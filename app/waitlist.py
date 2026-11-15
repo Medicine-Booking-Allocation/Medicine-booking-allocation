@@ -2,7 +2,14 @@ from flask import Blueprint, request, jsonify, session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models import (
-    db, User, Booking, Medicine, Inventory, WaitlistEntry, utc_now
+    db,
+    User,
+    Booking,
+    Medicine,
+    Inventory,
+    WaitlistEntry,
+    Prescription,
+    utc_now
 )
 from app.priority import rank_bookings
 from app.notification import create_notification
@@ -78,12 +85,7 @@ def promote_waitlisted_bookings(medicine_id):
     if not medicine:
         return []
 
-    # Prescription verification must be integrated before
-    # promoting bookings for prescription-required medicines.
-    if medicine.prescription_required:
-        return []
-
-    entries = (
+    entries_query = (
         db.session.query(WaitlistEntry, Booking)
         .join(
             Booking,
@@ -94,8 +96,23 @@ def promote_waitlisted_bookings(medicine_id):
             Booking.status == "Waitlisted",
             Booking.medicine_id == medicine_id
         )
-        .all()
     )
+
+    # Prescription-required bookings can only be promoted
+    # after their prescription has been verified.
+    if medicine.prescription_required:
+        entries_query = (
+            entries_query
+            .join(
+                Prescription,
+                Booking.prescription_id == Prescription.prescription_id
+            )
+            .filter(
+                Prescription.prescription_status == "Verified"
+            )
+        )
+
+    entries = entries_query.all()
 
     ranked = rank_bookings([
         {

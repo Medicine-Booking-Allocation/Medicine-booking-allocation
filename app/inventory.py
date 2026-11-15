@@ -1,5 +1,12 @@
 from flask import Blueprint, request, jsonify, session
-from app.models import db, Medicine, Inventory, utc_now
+from app.models import (
+    db,
+    Medicine,
+    Inventory,
+    Booking,
+    Prescription,
+    utc_now
+)
 from app.auth_utils import role_required
 from app.audit_utils import record_audit
 from sqlalchemy.exc import SQLAlchemyError
@@ -118,19 +125,33 @@ def reserve_stock():
         "reserved_quantity": inventory.reserved_quantity
     }), 200
 
-
 @inventory_bp.route('/fulfil', methods=['POST'])
 @role_required('Pharmacy Staff', 'Administrator')
 def fulfil_stock():
     data = request.get_json()
 
     if not data or not data.get('medicine_id') or 'quantity' not in data:
-        return jsonify({"error": "medicine_id and quantity are required"}), 400
+        return jsonify({
+            "error": "medicine_id and quantity are required"
+        }), 400
 
     quantity = data.get('quantity')
 
-    if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity <= 0:
-        return jsonify({"error": "Quantity must be a positive integer"}), 400
+    if (
+        not isinstance(quantity, int)
+        or isinstance(quantity, bool)
+        or quantity <= 0
+    ):
+        return jsonify({
+            "error": "Quantity must be a positive integer"
+        }), 400
+
+    medicine = db.session.get(Medicine, data['medicine_id'])
+
+    if not medicine or medicine.status != 'Active':
+        return jsonify({
+            "error": "Medicine not found or inactive"
+        }), 404
 
     inventory = Inventory.query.filter_by(
         medicine_id=data['medicine_id']
@@ -139,19 +160,87 @@ def fulfil_stock():
     if not inventory:
         return jsonify({"error": "Inventory not found"}), 404
 
+    booking = None
+
+    # Prescription-required medicines must be fulfilled
+    # against a verified, allocated booking.
+    if medicine.prescription_required:
+        booking_id = data.get('booking_id')
+
+        if not booking_id:
+            return jsonify({
+                "error": (
+                    "booking_id is required for "
+                    "prescription-required medicines"
+                )
+            }), 400
+
+        booking = db.session.get(Booking, booking_id)
+
+        if not booking:
+            return jsonify({"error": "Booking not found"}), 404
+
+        if booking.medicine_id != medicine.medicine_id:
+            return jsonify({
+                "error": "Booking does not belong to this medicine"
+            }), 400
+
+        if booking.status != 'Allocated':
+            return jsonify({
+                "error": "Only allocated bookings can be fulfilled"
+            }), 400
+
+        if not booking.prescription_id:
+            return jsonify({
+                "error": "Booking has no associated prescription"
+            }), 400
+
+        prescription = db.session.get(
+            Prescription,
+            booking.prescription_id
+        )
+
+        if (
+            not prescription
+            or prescription.prescription_status != 'Verified'
+        ):
+            return jsonify({
+                "error": "Prescription must be verified before fulfilment"
+            }), 403
+
+        if quantity != booking.quantity:
+            return jsonify({
+                "error": (
+                    "Fulfilment quantity must match "
+                    "the booking quantity"
+                )
+            }), 400
+
     if inventory.reserved_quantity < quantity:
-        return jsonify({"error": "Insufficient reserved stock"}), 400
+        return jsonify({
+            "error": "Insufficient reserved stock"
+        }), 400
 
     inventory.reserved_quantity -= quantity
     inventory.fulfilled_quantity += quantity
     inventory.last_updated_at = utc_now()
+
+    if booking:
+        booking.status = 'Fulfilled'
 
     record_audit(
         actor_id=session.get('user_id'),
         action='INVENTORY_FULFILLED',
         entity_type='Inventory',
         entity_id=inventory.inventory_id,
-        details=f"Fulfilled {quantity} units for medicine {data['medicine_id']}."
+        details=(
+            f"Fulfilled {quantity} units for medicine "
+            f"{data['medicine_id']}."
+            + (
+                f" Booking ID: {booking.booking_id}."
+                if booking else ""
+            )
+        )
     )
 
     db.session.commit()
@@ -159,9 +248,9 @@ def fulfil_stock():
     return jsonify({
         "message": "Stock fulfilled successfully",
         "reserved_quantity": inventory.reserved_quantity,
-        "fulfilled_quantity": inventory.fulfilled_quantity
+        "fulfilled_quantity": inventory.fulfilled_quantity,
+        "booking_id": booking.booking_id if booking else None
     }), 200
-
 
 @inventory_bp.route('/release', methods=['POST'])
 @role_required('Pharmacy Staff', 'Administrator')
