@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, session
 from sqlalchemy.exc import SQLAlchemyError
+from app.waitlist import promote_waitlisted_bookings
 
 from app.models import (
     db,
@@ -257,7 +258,62 @@ def create_booking():
                 "priority_score": priority_score,
                 "status": booking.status
             }), 201
+        # Check whether older active waitlist entries exist.
+        existing_waitlist = (
+            db.session.query(WaitlistEntry)
+            .join(
+                Booking,
+                WaitlistEntry.booking_id == Booking.booking_id
+            )
+            .filter(
+                WaitlistEntry.status == "Active",
+                Booking.status == "Waitlisted",
+                Booking.medicine_id == medicine_id
+            )
+            .first()
+        )
 
+        # If a queue already exists, join it instead of bypassing it.
+        if existing_waitlist:
+            booking.status = "Waitlisted"
+
+            db.session.add(WaitlistEntry(
+                booking_id=booking.booking_id,
+                priority_score=priority_score,
+                position=0,
+                status="Active"
+            ))
+            db.session.flush()
+
+            update_waitlist_positions(medicine_id)
+
+            create_notification(
+                user_id=user_id,
+                event_type="Waitlist",
+                message="Your booking has been added to the waitlist.",
+                channel="In-app",
+                commit=False
+            )
+
+            record_audit(
+                actor_id=user_id,
+                action="BOOKING_WAITLISTED",
+                entity_type="Booking",
+                entity_id=booking.booking_id,
+                details="Booking joined the existing priority queue."
+            )
+
+            promoted = promote_waitlisted_bookings(medicine_id)
+
+            db.session.refresh(booking)
+
+            return jsonify({
+                "message": "Booking processed using priority order.",
+                "booking_id": booking.booking_id,
+                "priority_score": priority_score,
+                "status": booking.status,
+                "promoted_count": len(promoted)
+            }), 201
         # Atomically reserve stock only if sufficient quantity exists.
         allocated_rows = 0
 

@@ -607,4 +607,37 @@ def test_booking_saves_priority_evaluation(client):
         assert float(evaluation.patient_history_weight) == 0.3
 
         assert float(evaluation.final_score) == 60
+        
+def test_new_booking_does_not_bypass_existing_waitlist(client):
+    test_client, customer_id, medicine_id, staff_id = client
+
+    login_customer(test_client)
+
+    # First booking: insufficient stock, so it enters waitlist.
+    first_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 150,
+            "urgency": "emergency"
+        }
+    )
+
+    assert first_response.status_code == 201
+    assert first_response.json["status"] == "Waitlisted"
+
+    # Second booking arrives while the first is waiting.
+    second_response = test_client.post(
+        '/api/bookings/',
+        json={
+            "medicine_id": medicine_id,
+            "quantity": 5,
+            "urgency": "low"
+        }
+    )
+
+    assert second_response.status_code == 201
+
+    # The lower-priority booking must not bypass the queue.
+    assert second_response.json["status"] == "Waitlisted"
 
