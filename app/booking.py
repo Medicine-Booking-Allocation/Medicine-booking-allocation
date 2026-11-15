@@ -150,10 +150,6 @@ def create_booking():
             medicine_id=medicine_id
         ).first()
 
-        available_quantity = (
-            inventory.available_quantity if inventory else 0
-        )
-
         # Temporary neutral scores for factors whose policies
         # have not yet been finalized by the project team.
         priority_score = calculate_priority_score(
@@ -211,11 +207,24 @@ def create_booking():
                 "status": booking.status
             }), 201
 
-        # Allocate stock if sufficient quantity is available.
-        if inventory and available_quantity >= quantity:
+        # Atomically reserve stock only if sufficient quantity exists.
+        allocated_rows = 0
 
-            inventory.available_quantity -= quantity
-            inventory.reserved_quantity += quantity
+        if inventory:
+            allocated_rows = Inventory.query.filter(
+                Inventory.inventory_id == inventory.inventory_id,
+                Inventory.available_quantity >= quantity
+            ).update(
+                {
+                    Inventory.available_quantity:
+                        Inventory.available_quantity - quantity,
+                    Inventory.reserved_quantity:
+                        Inventory.reserved_quantity + quantity
+                },
+                synchronize_session=False
+            )
+
+        if allocated_rows == 1:
 
             booking.status = "Allocated"
             booking.allocated_at = utc_now()

@@ -59,7 +59,8 @@ def promote_waitlisted_bookings(medicine_id):
     Allocate replenished stock to eligible waitlisted bookings
     in descending priority order.
 
-    Call this after the inventory module updates available stock.
+    Stock reservation and booking promotion use conditional
+    database updates to prevent duplicate allocation.
     """
 
     inventory = Inventory.query.filter_by(
@@ -116,20 +117,89 @@ def promote_waitlisted_bookings(medicine_id):
         for item in ranked:
             entry, booking = entry_map[item["booking_id"]]
 
-            # Stop when the next highest-priority booking
-            # cannot be fulfilled with the remaining stock.
-            if inventory.available_quantity < booking.quantity:
+            allocation_time = utc_now()
+
+            # Claim the booking only if it is still waitlisted.
+            claimed_rows = Booking.query.filter_by(
+                booking_id=booking.booking_id,
+                status="Waitlisted"
+            ).update(
+                {
+                    Booking.status: "Allocated",
+                    Booking.allocated_at: allocation_time
+                },
+                synchronize_session=False
+            )
+
+            # Another request may already have processed it.
+            if claimed_rows != 1:
+                continue
+
+            # Reserve stock atomically only if enough is available.
+            stock_rows = Inventory.query.filter(
+                Inventory.inventory_id == inventory.inventory_id,
+                Inventory.available_quantity >= booking.quantity
+            ).update(
+                {
+                    Inventory.available_quantity:
+                        Inventory.available_quantity - booking.quantity,
+                    Inventory.reserved_quantity:
+                        Inventory.reserved_quantity + booking.quantity
+                },
+                synchronize_session=False
+            )
+
+            # If stock is insufficient, restore the booking status.
+            if stock_rows != 1:
+                Booking.query.filter_by(
+                    booking_id=booking.booking_id,
+                    status="Allocated"
+                ).update(
+                    {
+                        Booking.status: "Waitlisted",
+                        Booking.allocated_at: None
+                    },
+                    synchronize_session=False
+                )
                 break
 
-            inventory.available_quantity -= booking.quantity
-            inventory.reserved_quantity += booking.quantity
+            # Mark the waitlist entry as promoted.
+            entry_rows = WaitlistEntry.query.filter_by(
+                waitlist_id=entry.waitlist_id,
+                status="Active"
+            ).update(
+                {
+                    WaitlistEntry.status: "Promoted"
+                },
+                synchronize_session=False
+            )
 
-            booking.status = "Allocated"
-            booking.allocated_at = utc_now()
+            # If the entry could not be updated, undo the reservation.
+            if entry_rows != 1:
+                Inventory.query.filter_by(
+                    inventory_id=inventory.inventory_id
+                ).update(
+                    {
+                        Inventory.available_quantity:
+                            Inventory.available_quantity + booking.quantity,
+                        Inventory.reserved_quantity:
+                            Inventory.reserved_quantity - booking.quantity
+                    },
+                    synchronize_session=False
+                )
 
-            entry.status = "Promoted"
+                Booking.query.filter_by(
+                    booking_id=booking.booking_id,
+                    status="Allocated"
+                ).update(
+                    {
+                        Booking.status: "Waitlisted",
+                        Booking.allocated_at: None
+                    },
+                    synchronize_session=False
+                )
+                continue
 
-            # Notify the customer that their waitlisted booking is allocated.
             create_notification(
                 user_id=booking.user_id,
                 event_type='Allocation',
@@ -160,7 +230,6 @@ def promote_waitlisted_bookings(medicine_id):
                 "status": "Allocated"
             })
 
-        # Recalculate positions of remaining active entries.
         update_waitlist_positions(medicine_id)
 
         db.session.commit()
