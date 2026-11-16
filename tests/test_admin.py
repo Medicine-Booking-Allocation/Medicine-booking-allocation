@@ -571,6 +571,30 @@ def test_reports_require_admin(endpoint, admin_data):
     assert response.status_code == 401
 
 
+@pytest.mark.parametrize('endpoint', [
+    '/api/admin/reports/bookings',
+    '/api/admin/reports/allocations',
+    '/api/admin/reports/waitlist',
+    '/api/admin/reports/inventory',
+    '/api/admin/reports/prescriptions',
+    '/api/admin/reports/notifications'
+])
+@pytest.mark.parametrize(('email', 'password'), [
+    ('customer_admin@pes.edu', 'customer123'),
+    ('staff_admin@pes.edu', 'staff123')
+])
+def test_non_admin_users_cannot_access_reports(
+    endpoint, email, password, admin_data
+):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, email, password)
+
+    response = client.get(endpoint)
+
+    assert response.status_code == 403
+
 # ---------------------------------------------------------
 # REPORT ENDPOINTS
 # ---------------------------------------------------------
