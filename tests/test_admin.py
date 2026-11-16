@@ -325,12 +325,15 @@ def test_admin_cannot_update_nonexistent_priority_rule(admin_data):
 # AUDIT LOGS
 # ---------------------------------------------------------
 
+
 def test_admin_can_view_audit_logs(admin_data):
     app, ids = admin_data
     client = app.test_client()
 
+    # Login creates a SUCCESSFUL_LOGIN audit record.
     login(client, 'admin_test@pes.edu', 'admin123')
 
+    # Create another audit record manually.
     db.session.add(AuditLog(
         actor_id=ids['admin_id'],
         action='TEST_ACTION',
@@ -343,8 +346,17 @@ def test_admin_can_view_audit_logs(admin_data):
     response = client.get('/api/admin/audit-logs')
 
     assert response.status_code == 200
-    assert response.json['total_logs_returned'] == 1
-    assert response.json['audit_logs'][0]['action'] == 'TEST_ACTION'
+
+    # Both login and manually created audit records should be returned.
+    assert response.json['total_logs_returned'] == 2
+
+    actions = [
+        log['action']
+        for log in response.json['audit_logs']
+    ]
+
+    assert 'SUCCESSFUL_LOGIN' in actions
+    assert 'TEST_ACTION' in actions
 
 
 def test_admin_audit_log_limit_validation(admin_data):
@@ -687,3 +699,64 @@ def test_notification_report_returns_actual_notification_data(admin_data):
     # Notification message contents must not be exposed in the report.
     assert 'message' not in response.json['notifications'][0]
 
+
+def test_unauthenticated_access_creates_security_audit_log(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    response = client.get('/api/admin/users')
+
+    assert response.status_code == 401
+
+    audit = AuditLog.query.filter_by(
+        action='UNAUTHENTICATED_ACCESS'
+    ).first()
+
+    assert audit is not None
+    assert audit.actor_id is None
+    assert audit.entity_type == 'SECURITY'
+    assert 'method=GET' in audit.details
+
+
+def test_unauthorized_role_access_creates_security_audit_log(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'customer_admin@pes.edu', 'customer123')
+
+    response = client.get('/api/admin/users')
+
+    assert response.status_code == 403
+
+    audit = AuditLog.query.filter_by(
+        action='UNAUTHORIZED_ROLE_ACCESS'
+    ).first()
+
+    assert audit is not None
+    assert audit.actor_id == ids['customer_id']
+    assert audit.entity_type == 'SECURITY'
+    assert 'user_role=Customer' in audit.details
+
+
+def test_inactive_account_access_creates_security_audit_log(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    # Establish a session, then deactivate the account.
+    login(client, 'customer_admin@pes.edu', 'customer123')
+
+    user = db.session.get(User, ids['customer_id'])
+    user.account_status = 'Inactive'
+    db.session.commit()
+
+    response = client.get('/api/admin/users')
+
+    assert response.status_code == 401
+
+    audit = AuditLog.query.filter_by(
+        action='INVALID_OR_INACTIVE_ACCOUNT_ACCESS'
+    ).first()
+
+    assert audit is not None
+    assert audit.actor_id == ids['customer_id']
+    assert audit.entity_type == 'SECURITY'

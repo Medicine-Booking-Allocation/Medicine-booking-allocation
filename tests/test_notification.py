@@ -3,6 +3,7 @@ from werkzeug.security import generate_password_hash
 from app import create_app
 from app.models import db, User, Notification, AuditLog
 from app.notification import create_notification
+from app.audit_utils import record_audit
 
 
 @pytest.fixture
@@ -371,4 +372,157 @@ def test_system_generated_audit_log(app_data):
     assert saved.actor_id == "SYSTEM"
     assert saved.action == "AUTO_PROMOTION"
     assert saved.timestamp is not None
+
+
+def test_record_audit_creates_valid_record(app_data):
+    app, ids = app_data
+
+    audit = record_audit(
+        actor_id=ids['customer_id'],
+        action='TEST_ACTION',
+        entity_type='TestEntity',
+        entity_id='test-001',
+        details='A normal audit event.'
+    )
+
+    assert audit in db.session
+    assert audit.action == 'TEST_ACTION'
+    assert audit.entity_type == 'TestEntity'
+    assert audit.details == 'A normal audit event.'
+
+    db.session.commit()
+
+    saved = AuditLog.query.filter_by(
+        action='TEST_ACTION'
+    ).first()
+
+    assert saved is not None
+    assert saved.actor_id == ids['customer_id']
+
+
+def test_record_audit_allows_system_actor(app_data):
+    app, ids = app_data
+
+    audit = record_audit(
+        actor_id='SYSTEM',
+        action='SYSTEM_EVENT',
+        entity_type='Booking',
+        details='System-generated event.'
+    )
+
+    db.session.commit()
+
+    saved = AuditLog.query.filter_by(
+        action='SYSTEM_EVENT'
+    ).first()
+
+    assert saved is not None
+    assert saved.actor_id == 'SYSTEM'
+
+
+def test_record_audit_redacts_sensitive_values(app_data):
+    app, ids = app_data
+
+    audit = record_audit(
+        actor_id=ids['customer_id'],
+        action='SECURITY_EVENT',
+        entity_type='SECURITY',
+        details=(
+            'password=MySecret123; '
+            'token=abc123; '
+            'endpoint=/api/login'
+        )
+    )
+
+    db.session.commit()
+
+    saved = AuditLog.query.filter_by(
+        action='SECURITY_EVENT'
+    ).first()
+
+    assert saved is not None
+    assert 'MySecret123' not in saved.details
+    assert 'abc123' not in saved.details
+    assert saved.details.count('[REDACTED]') == 2
+    assert 'endpoint=/api/login' in saved.details
+
+
+@pytest.mark.parametrize(
+    'field,value',
+    [
+        ('actor_id', 'A' * 37),
+        ('entity_id', 'B' * 37),
+        ('action', 'A' * 101),
+        ('entity_type', 'E' * 51),
+    ]
+)
+def test_record_audit_rejects_values_exceeding_column_lengths(
+    app_data,
+    field,
+    value
+):
+    app, ids = app_data
+
+    arguments = {
+        'actor_id': ids['customer_id'],
+        'action': 'TEST_ACTION',
+        'entity_type': 'TestEntity',
+        'entity_id': 'test-001',
+        'details': 'Test details'
+    }
+
+    arguments[field] = value
+
+    with pytest.raises(ValueError):
+        record_audit(**arguments)
+
+
+@pytest.mark.parametrize(
+    'field,value',
+    [
+        ('actor_id', 123),
+        ('entity_id', 123),
+        ('details', 123),
+    ]
+)
+def test_record_audit_rejects_invalid_field_types(
+    app_data,
+    field,
+    value
+):
+    app, ids = app_data
+
+    arguments = {
+        'actor_id': ids['customer_id'],
+        'action': 'TEST_ACTION',
+        'entity_type': 'TestEntity',
+        'entity_id': 'test-001',
+        'details': 'Test details'
+    }
+
+    arguments[field] = value
+
+    with pytest.raises(ValueError):
+        record_audit(**arguments)
+
+
+def test_record_audit_does_not_commit_transaction(app_data):
+    app, ids = app_data
+
+    audit = record_audit(
+        actor_id=ids['customer_id'],
+        action='UNCOMMITTED_EVENT',
+        entity_type='TestEntity',
+        details='This record is not committed yet.'
+    )
+
+    # The audit record should remain pending in the session.
+    assert audit in db.session.new
+
+    # The caller decides when to commit.
+    db.session.commit()
+
+    assert AuditLog.query.filter_by(
+        action='UNCOMMITTED_EVENT'
+    ).first() is not None
 
