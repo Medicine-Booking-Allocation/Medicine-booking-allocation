@@ -379,6 +379,125 @@ def test_notification_cannot_exceed_retry_limit(app_data):
     assert b'Maximum notification retry limit reached' in response.data
     
 
+@pytest.mark.parametrize('status', ['Pending', 'Sent'])
+def test_non_failed_notification_cannot_be_retried(app_data, status):
+    app, ids = app_data
+    client = app.test_client()
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    notification.status = status
+    db.session.commit()
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    response = client.post(
+        f'/api/notifications/{notification.notification_id}/retry'
+    )
+
+    assert response.status_code == 400
+
+    db.session.refresh(notification)
+
+    assert notification.status == status
+    assert notification.retry_count == 0
+
+
+def test_retry_uses_configured_maximum(app_data):
+    app, ids = app_data
+    client = app.test_client()
+
+    # Configure a maximum of one retry for this test.
+    app.config['NOTIFICATION_MAX_RETRIES'] = 1
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    assert notification.max_retries == 1
+
+    notification.status = 'Failed'
+    db.session.commit()
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    # First retry should succeed.
+    response = client.post(
+        f'/api/notifications/{notification.notification_id}/retry'
+    )
+
+    assert response.status_code == 200
+    assert response.json['notification']['retry_count'] == 1
+
+    db.session.refresh(notification)
+
+    assert notification.status == 'Pending'
+    assert notification.retry_count == 1
+    assert notification.last_attempt_at is not None
+
+    # A second retry must be rejected.
+    notification.status = 'Failed'
+    db.session.commit()
+
+    response = client.post(
+        f'/api/notifications/{notification.notification_id}/retry'
+    )
+
+    assert response.status_code == 400
+    assert b'Maximum notification retry limit reached' in response.data
+
+    db.session.refresh(notification)
+
+    assert notification.retry_count == 1
+    assert notification.status == 'Failed'
+
+
+def test_retry_timestamp_and_status_are_persisted(app_data):
+    app, ids = app_data
+    client = app.test_client()
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    notification.status = 'Failed'
+    db.session.commit()
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    response = client.post(
+        f'/api/notifications/{notification.notification_id}/retry'
+    )
+
+    assert response.status_code == 200
+
+    db.session.refresh(notification)
+
+    assert notification.status == 'Pending'
+    assert notification.retry_count == 1
+    assert notification.last_attempt_at is not None
+
+
 def test_notification_model_creation(app_data):
     app, ids = app_data
 
