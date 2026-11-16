@@ -14,6 +14,7 @@ from app.models import (
     Prescription
 )
 
+
 @pytest.fixture
 def client():
     app = create_app({
@@ -459,7 +460,7 @@ def test_cancelled_waitlist_booking_creates_audit_log(client):
 
         assert audit is not None
         assert 'Waitlisted booking cancelled' in audit.details
-        
+
 
 def test_higher_priority_booking_gets_first_waitlist_position(client):
     test_client, customer_id, medicine_id, staff_id = client
@@ -510,7 +511,7 @@ def test_higher_priority_booking_gets_first_waitlist_position(client):
 
     assert positions["high"] == 1
     assert positions["low"] == 2
-    
+
 
 def test_waitlist_promotes_higher_priority_booking_first(client):
     test_client, customer_id, medicine_id, staff_id = client
@@ -608,7 +609,8 @@ def test_booking_saves_priority_evaluation(client):
         assert float(evaluation.patient_history_weight) == 0.3
 
         assert float(evaluation.final_score) == 60
-        
+
+
 def test_new_booking_does_not_bypass_existing_waitlist(client):
     test_client, customer_id, medicine_id, staff_id = client
 
@@ -787,6 +789,16 @@ def test_customer_can_cancel_allocated_booking_and_release_stock(client):
     assert response.json["status"] == "Cancelled"
 
     with app.app_context():
+        # Verify that the customer receives a cancellation notification.
+        notification = Notification.query.filter_by(
+            user_id=customer_id,
+            event_type="Cancellation"
+        ).first()
+
+        assert notification is not None
+        assert notification.status == "Pending"
+
+        # Verify that the reserved inventory is released.
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
         ).first()
