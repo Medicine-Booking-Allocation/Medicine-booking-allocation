@@ -1,7 +1,6 @@
 import pytest
 from werkzeug.security import generate_password_hash
 from app import create_app
-
 from app.models import (
     db,
     User,
@@ -628,6 +627,17 @@ def test_new_booking_does_not_bypass_existing_waitlist(client):
     assert first_response.status_code == 201
     assert first_response.json["status"] == "Waitlisted"
 
+    # Record notification counts before the second booking.
+    booking_before = Notification.query.filter_by(
+        user_id=customer_id,
+        event_type="Booking"
+    ).count()
+
+    waitlist_before = Notification.query.filter_by(
+        user_id=customer_id,
+        event_type="Waitlist"
+    ).count()
+
     # Second booking arrives while the first is waiting.
     second_response = test_client.post(
         '/api/bookings/',
@@ -642,6 +652,20 @@ def test_new_booking_does_not_bypass_existing_waitlist(client):
 
     # The lower-priority booking must not bypass the queue.
     assert second_response.json["status"] == "Waitlisted"
+
+    # Verify that the second booking generates both notifications.
+    booking_after = Notification.query.filter_by(
+        user_id=customer_id,
+        event_type="Booking"
+    ).count()
+
+    waitlist_after = Notification.query.filter_by(
+        user_id=customer_id,
+        event_type="Waitlist"
+    ).count()
+
+    assert booking_after == booking_before + 1
+    assert waitlist_after == waitlist_before + 1
 
 
 def test_staff_can_fulfil_allocated_booking(client):

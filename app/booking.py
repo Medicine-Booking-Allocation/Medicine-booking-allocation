@@ -20,6 +20,7 @@ from app.notification import create_notification
 from app.priority import (calculate_priority_score,rank_bookings,DEFAULT_WEIGHTS)
 from app.audit_utils import record_audit
 
+
 booking_bp = Blueprint("booking", __name__)
 
 URGENCY_SCORES = {
@@ -28,6 +29,7 @@ URGENCY_SCORES = {
     "medium": 50,
     "low": 25
 }
+
 
 def update_waitlist_positions(medicine_id):
     """
@@ -237,11 +239,11 @@ def create_booking():
             priority_score=priority_score,
             status="Requested"
         )
-        
+
         # Save booking first so its ID is generated.
         db.session.add(booking)
         db.session.flush()
-        
+
         # Save the exact priority factors and rule version
         # used to calculate this booking's priority score.
         priority_evaluation = PriorityEvaluation(
@@ -324,6 +326,16 @@ def create_booking():
 
             update_waitlist_positions(medicine_id)
 
+            # FR-NOT-01: Booking-created notification.
+            create_notification(
+                user_id=user_id,
+                event_type="Booking",
+                message="Your booking has been created.",
+                channel="In-app",
+                commit=False
+            )
+
+            # Notify the customer that the booking joined the waitlist.
             create_notification(
                 user_id=user_id,
                 event_type="Waitlist",
