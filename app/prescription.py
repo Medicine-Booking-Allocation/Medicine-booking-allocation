@@ -1,3 +1,4 @@
+
 from flask import Blueprint, request, jsonify, session
 
 from app.models import (
@@ -69,6 +70,7 @@ def submit_prescription():
     )
 
     db.session.add(prescription)
+
     # Find all active Pharmacy Staff members.
     active_staff = User.query.filter_by(
         role='Pharmacy Staff',
@@ -133,7 +135,6 @@ def get_prescription(prescription_id):
     }), 200
 
 
-
 @prescription_bp.route('/<prescription_id>/status', methods=['PATCH'])
 @role_required('Pharmacy Staff', 'Administrator')
 def update_prescription_status(prescription_id):
@@ -183,6 +184,7 @@ def update_prescription_status(prescription_id):
     else:
         event_type = 'Prescription'
 
+    # Notify the customer about the prescription status update.
     create_notification(
         user_id=prescription.user_id,
         event_type=event_type,
@@ -230,7 +232,39 @@ def update_prescription_status(prescription_id):
                 update_waitlist_positions(medicine_id)
                 promote_waitlisted_bookings(medicine_id)
 
-        # Save status and notification even if there were no bookings.
+        elif new_status == 'Rejected':
+            # Find pending bookings linked to the rejected prescription.
+            pending_bookings = (
+                Booking.query
+                .join(
+                    Medicine,
+                    Booking.medicine_id == Medicine.medicine_id
+                )
+                .filter(
+                    Booking.prescription_id == prescription_id,
+                    Booking.status == 'Requested',
+                    Medicine.prescription_required.is_(True)
+                )
+                .all()
+            )
+
+            # Reject pending bookings and notify their customers.
+            for booking in pending_bookings:
+                booking.status = 'Rejected'
+
+                # FR-NOT-02: Booking rejection notification.
+                create_notification(
+                    user_id=booking.user_id,
+                    event_type='Rejection',
+                    message=(
+                        f'Your booking {booking.booking_id} has been '
+                        'rejected because its prescription was rejected.'
+                    ),
+                    channel='In-app',
+                    commit=False
+                )
+
+        # Save status changes and notifications together.
         db.session.commit()
 
     except Exception:
@@ -246,6 +280,7 @@ def update_prescription_status(prescription_id):
             if prescription.verified_at else None
         )
     }), 200
+
 
 @prescription_bp.route('/user/<user_id>', methods=['GET'])
 @role_required('Customer', 'Pharmacy Staff', 'Administrator')

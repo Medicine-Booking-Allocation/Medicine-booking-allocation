@@ -657,6 +657,7 @@ def test_verified_prescription_waitlists_when_stock_unavailable(client):
         assert entry.status == "Active"
 
 
+
 def test_rejected_prescription_does_not_allocate_booking(client):
     test_client, customer_id, medicine_id, staff_id = client
 
@@ -693,10 +694,27 @@ def test_rejected_prescription_does_not_allocate_booking(client):
             medicine_id=medicine_id
         ).first()
 
-        assert booking.status == "Requested"
+        # FR-NOT-02: Rejected prescription rejects its pending booking.
+        assert booking.status == "Rejected"
+
+        # Rejected bookings must not enter the waitlist.
         assert entry is None
+
+        # Rejection must not reserve or consume inventory.
         assert inventory.available_quantity == 100
         assert inventory.reserved_quantity == 0
+
+        # Verify that the customer receives a booking-specific
+        # rejection notification.
+        booking_notification = Notification.query.filter_by(
+            user_id=customer_id,
+            event_type="Rejection"
+        ).filter(
+            Notification.message.contains(booking_id)
+        ).first()
+
+        assert booking_notification is not None
+        assert booking_notification.status == "Pending"
 
 
 def test_unverified_prescription_cannot_be_fulfilled(client):
