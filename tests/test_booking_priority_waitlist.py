@@ -1,5 +1,6 @@
 import pytest
 from werkzeug.security import generate_password_hash
+
 from app import create_app
 from app.models import (
     db,
@@ -122,6 +123,18 @@ def test_booking_allocation_creates_notifications(client):
         assert "Booking" in event_types
         assert "Allocation" in event_types
 
+        staff_notifications = Notification.query.filter_by(
+            user_id=staff_id,
+            event_type='Allocation'
+        ).all()
+
+        assert len(staff_notifications) == 1
+        assert staff_notifications[0].status == 'Pending'
+        assert (
+            str(response.json["booking_id"])
+            in staff_notifications[0].message
+        )
+
 
 def test_waitlisted_booking_creates_notifications(client):
     test_client, customer_id, medicine_id, staff_id = client
@@ -189,6 +202,8 @@ def test_promoted_waitlist_booking_notifies_customer(client):
     assert response.status_code == 201
     assert response.json["status"] == "Waitlisted"
 
+    booking_id = response.json["booking_id"]
+
     with app.app_context():
         inventory = Inventory.query.filter_by(
             medicine_id=medicine_id
@@ -214,6 +229,15 @@ def test_promoted_waitlist_booking_notifies_customer(client):
         ).all()
 
         assert len(notifications) == 1
+
+        staff_notifications = Notification.query.filter_by(
+            user_id=staff_id,
+            event_type='Allocation'
+        ).all()
+
+        assert len(staff_notifications) == 1
+        assert staff_notifications[0].status == 'Pending'
+        assert str(booking_id) in staff_notifications[0].message
 
 
 def test_cancelled_waitlist_booking_notifies_customer(client):

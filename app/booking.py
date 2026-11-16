@@ -17,7 +17,7 @@ from app.models import (
 
 from app.auth_utils import role_required
 from app.notification import create_notification
-from app.priority import (calculate_priority_score,rank_bookings,DEFAULT_WEIGHTS)
+from app.priority import (calculate_priority_score, rank_bookings, DEFAULT_WEIGHTS)
 from app.audit_utils import record_audit
 
 
@@ -405,6 +405,7 @@ def create_booking():
                 commit=False
             )
 
+            # Notify the customer about successful allocation.
             create_notification(
                 user_id=user_id,
                 event_type='Allocation',
@@ -413,6 +414,25 @@ def create_booking():
                 commit=False
             )
 
+            # FR-NOT-03: Notify active Pharmacy Staff about the allocation.
+            active_staff = User.query.filter_by(
+                role='Pharmacy Staff',
+                account_status='Active'
+            ).all()
+
+            for staff in active_staff:
+                create_notification(
+                    user_id=staff.user_id,
+                    event_type='Allocation',
+                    message=(
+                        f'Booking {booking.booking_id} has been allocated '
+                        f'({booking.quantity} units) and requires fulfilment.'
+                    ),
+                    channel='In-app',
+                    commit=False
+                )
+
+            # Commit booking, inventory and notifications together.
             db.session.commit()
 
             return jsonify({
@@ -539,7 +559,6 @@ def get_booking(booking_id):
             if booking.allocated_at else None
         )
     }), 200
-
 
 
 @booking_bp.route("/<booking_id>/fulfil", methods=["POST"])

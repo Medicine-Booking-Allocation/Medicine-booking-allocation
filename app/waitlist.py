@@ -228,6 +228,24 @@ def promote_waitlisted_bookings(medicine_id):
                 commit=False
             )
 
+            # FR-NOT-03: Notify active Pharmacy Staff about the allocation.
+            active_staff = User.query.filter_by(
+                role='Pharmacy Staff',
+                account_status='Active'
+            ).all()
+
+            for staff in active_staff:
+                create_notification(
+                    user_id=staff.user_id,
+                    event_type='Allocation',
+                    message=(
+                        f'Waitlisted booking {booking.booking_id} has been '
+                        f'allocated ({booking.quantity} units) and requires fulfilment.'
+                    ),
+                    channel='In-app',
+                    commit=False
+                )
+
             record_audit(
                 actor_id=session.get('user_id'),
                 action='BOOKING_ALLOCATED',
