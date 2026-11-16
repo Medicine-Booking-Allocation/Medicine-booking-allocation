@@ -189,6 +189,72 @@ def test_admin_can_update_user_role(admin_data):
     assert audit.actor_id == ids['admin_id']
 
 
+def test_admin_can_assign_all_supported_roles(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'admin_test@pes.edu', 'admin123')
+
+    supported_roles = [
+        'Customer',
+        'Pharmacy Staff',
+        'Administrator'
+    ]
+
+    for role in supported_roles:
+        response = client.patch(
+            f"/api/admin/users/{ids['customer_id']}/role",
+            json={'role': role}
+        )
+
+        assert response.status_code == 200
+        assert response.json.get(
+            'new_role',
+            response.json.get('role')
+        ) == role
+
+        updated_user = db.session.get(User, ids['customer_id'])
+        assert updated_user.role == role
+
+
+def test_non_admin_cannot_change_user_role(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'customer_admin@pes.edu', 'customer123')
+
+    response = client.patch(
+        f"/api/admin/users/{ids['staff_id']}/role",
+        json={'role': 'Administrator'}
+    )
+
+    assert response.status_code == 403
+
+    updated_user = db.session.get(User, ids['staff_id'])
+    assert updated_user.role == 'Pharmacy Staff'
+
+
+def test_assigning_same_role_does_not_create_audit_log(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'admin_test@pes.edu', 'admin123')
+
+    response = client.patch(
+        f"/api/admin/users/{ids['customer_id']}/role",
+        json={'role': 'Customer'}
+    )
+
+    assert response.status_code == 200
+    assert response.json['message'] == 'User already has this role'
+
+    audit = AuditLog.query.filter_by(
+        action='UPDATE_USER_ROLE'
+    ).first()
+
+    assert audit is None
+
+
 def test_admin_cannot_assign_invalid_role(admin_data):
     app, ids = admin_data
     client = app.test_client()

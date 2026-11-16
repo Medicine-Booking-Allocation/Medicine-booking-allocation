@@ -31,6 +31,27 @@ def test_register_user_success(client):
     assert response.status_code == 201
     assert b"User registered successfully" in response.data
 
+def test_registration_cannot_assign_administrator_role(client):
+    response = client.post('/api/auth/register', json={
+        "full_name": "Unauthorized Admin",
+        "email": "unauthorized@pes.edu",
+        "password": "securepassword",
+        "phone": "9876543211",
+        "role": "Administrator"
+    })
+
+    assert response.status_code == 201
+
+    from app.models import User
+
+    user = User.query.filter_by(
+        email='unauthorized@pes.edu'
+    ).first()
+
+    assert user is not None
+    assert user.role == 'Customer'
+
+
 def test_register_missing_fields(client):
     # This proves negative testing for FR-AUTH-01
     response = client.post('/api/auth/register', json={
