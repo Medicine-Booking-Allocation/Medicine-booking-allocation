@@ -387,6 +387,109 @@ def test_admin_cannot_update_nonexistent_priority_rule(admin_data):
     assert response.status_code == 404
 
 
+def test_admin_can_update_priority_rule_configuration(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'admin_test@pes.edu', 'admin123')
+    create_rule(client)
+
+    rule = PriorityRule.query.first()
+
+    response = client.patch(
+        f'/api/admin/priority-rules/{rule.rule_id}',
+        json={
+            'rule_name': 'Updated Priority',
+            'version': '2.0',
+            'urgency_weight': 0.5,
+            'availability_weight': 0.2,
+            'patient_history_weight': 0.3
+        }
+    )
+
+    assert response.status_code == 200
+
+    updated = response.json['priority_rule']
+
+    assert updated['rule_name'] == 'Updated Priority'
+    assert updated['version'] == '2.0'
+    assert updated['urgency_weight'] == 0.5
+    assert updated['availability_weight'] == 0.2
+    assert updated['patient_history_weight'] == 0.3
+
+    saved_rule = db.session.get(PriorityRule, rule.rule_id)
+
+    assert saved_rule.rule_name == 'Updated Priority'
+    assert saved_rule.version == '2.0'
+
+    audit = AuditLog.query.filter_by(
+        action='UPDATE_PRIORITY_RULE',
+        entity_id=rule.rule_id
+    ).first()
+
+    assert audit is not None
+    assert audit.actor_id == ids['admin_id']
+    assert audit.entity_type == 'PriorityRule'
+
+
+def test_admin_cannot_update_priority_rule_with_invalid_weights(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    login(client, 'admin_test@pes.edu', 'admin123')
+    create_rule(client)
+
+    rule = PriorityRule.query.first()
+
+    response = client.patch(
+        f'/api/admin/priority-rules/{rule.rule_id}',
+        json={
+            'urgency_weight': 0.5,
+            'availability_weight': 0.5,
+            'patient_history_weight': 0.5
+        }
+    )
+
+    assert response.status_code == 400
+
+    saved_rule = db.session.get(PriorityRule, rule.rule_id)
+
+    assert float(saved_rule.urgency_weight) == 0.4
+    assert float(saved_rule.availability_weight) == 0.3
+    assert float(saved_rule.patient_history_weight) == 0.3
+
+    assert AuditLog.query.filter_by(
+        action='UPDATE_PRIORITY_RULE'
+    ).count() == 0
+
+
+def test_non_admin_cannot_update_priority_rule(admin_data):
+    app, ids = admin_data
+    client = app.test_client()
+
+    rule = PriorityRule(
+        rule_name='Default Priority',
+        version='1.0',
+        urgency_weight=0.4,
+        availability_weight=0.3,
+        patient_history_weight=0.3,
+        status='Active'
+    )
+    db.session.add(rule)
+    db.session.commit()
+
+    login(client, 'staff_admin@pes.edu', 'staff123')
+
+    response = client.patch(
+        f'/api/admin/priority-rules/{rule.rule_id}',
+        json={'status': 'Inactive'}
+    )
+
+    assert response.status_code == 403
+
+    saved_rule = db.session.get(PriorityRule, rule.rule_id)
+    assert saved_rule.status == 'Active'
+
 # ---------------------------------------------------------
 # AUDIT LOGS
 # ---------------------------------------------------------
