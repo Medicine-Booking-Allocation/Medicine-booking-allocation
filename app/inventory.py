@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify, session
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.models import (
     db,
     Medicine,
@@ -7,13 +9,21 @@ from app.models import (
     Prescription,
     utc_now
 )
+
 from app.auth_utils import role_required
 from app.audit_utils import record_audit
-from sqlalchemy.exc import SQLAlchemyError
 from app.waitlist import promote_waitlisted_bookings
-
 inventory_bp = Blueprint('inventory', __name__)
 
+def commit_inventory_change():
+    try:
+        db.session.commit()
+        return None
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            "error": "Inventory operation failed due to a database error"
+        }), 500
 
 @inventory_bp.route('/add', methods=['POST'])
 @role_required('Pharmacy Staff', 'Administrator')
@@ -34,8 +44,8 @@ def add_stock():
         return jsonify({"error": "Medicine not found or inactive"}), 404
 
     inventory = Inventory.query.filter_by(
-        medicine_id=data['medicine_id']
-    ).first()
+    medicine_id=data['medicine_id']
+).with_for_update().first()
 
     if not inventory:
         inventory = Inventory(
@@ -58,7 +68,9 @@ def add_stock():
         details=f"Added {quantity} units for medicine {medicine.medicine_id}."
     )
 
-    db.session.commit()
+    error = commit_inventory_change()
+    if error:
+        return error
 
     try:
         promoted = promote_waitlisted_bookings(medicine.medicine_id)
@@ -96,8 +108,8 @@ def reserve_stock():
         return jsonify({"error": "Quantity must be a positive integer"}), 400
 
     inventory = Inventory.query.filter_by(
-        medicine_id=data['medicine_id']
-    ).first()
+    medicine_id=data['medicine_id']
+    ).with_for_update().first()
 
     if not inventory:
         return jsonify({"error": "Inventory not found"}), 404
@@ -117,7 +129,9 @@ def reserve_stock():
         details=f"Reserved {quantity} units for medicine {data['medicine_id']}."
     )
 
-    db.session.commit()
+    error_response = commit_inventory_change()
+    if error_response:
+        return error_response
 
     return jsonify({
         "message": "Stock reserved successfully",
@@ -154,8 +168,8 @@ def fulfil_stock():
         }), 404
 
     inventory = Inventory.query.filter_by(
-        medicine_id=data['medicine_id']
-    ).first()
+    medicine_id=data['medicine_id']
+    ).with_for_update().first()
 
     if not inventory:
         return jsonify({"error": "Inventory not found"}), 404
@@ -243,7 +257,9 @@ def fulfil_stock():
         )
     )
 
-    db.session.commit()
+    error_response = commit_inventory_change()
+    if error_response:
+        return error_response
 
     return jsonify({
         "message": "Stock fulfilled successfully",
@@ -266,8 +282,8 @@ def release_stock():
         return jsonify({"error": "Quantity must be a positive integer"}), 400
 
     inventory = Inventory.query.filter_by(
-        medicine_id=data['medicine_id']
-    ).first()
+    medicine_id=data['medicine_id']
+    ).with_for_update().first()
 
     if not inventory:
         return jsonify({"error": "Inventory not found"}), 404
@@ -287,7 +303,9 @@ def release_stock():
         details=f"Released {quantity} units for medicine {data['medicine_id']}."
     )
 
-    db.session.commit()
+    error_response = commit_inventory_change()
+    if error_response:
+        return error_response
 
     return jsonify({
         "message": "Reserved stock released successfully",
@@ -298,9 +316,7 @@ def release_stock():
 
 @inventory_bp.route('/<medicine_id>', methods=['GET'])
 def get_inventory(medicine_id):
-    inventory = Inventory.query.filter_by(
-        medicine_id=medicine_id
-    ).first()
+    inventory = Inventory.query.filter_by(medicine_id=medicine_id).first()
 
     if not inventory:
         return jsonify({"error": "Inventory not found"}), 404
