@@ -206,6 +206,106 @@ def test_staff_can_update_notification_status(app_data):
     assert response.json['notification']['status'] == 'Sent'
 
 
+def test_staff_can_mark_notification_failed(app_data):
+    app, ids = app_data
+    client = app.test_client()
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    response = client.patch(
+        f'/api/notifications/{notification.notification_id}/status',
+        json={'status': 'Failed'}
+    )
+
+    assert response.status_code == 200
+    assert response.json['notification']['status'] == 'Failed'
+
+    saved = db.session.get(
+        Notification,
+        notification.notification_id
+    )
+
+    assert saved.status == 'Failed'
+    assert saved.last_attempt_at is not None
+
+
+def test_staff_can_mark_sent_notification_delivered(app_data):
+    app, ids = app_data
+    client = app.test_client()
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    notification.status = 'Sent'
+    db.session.commit()
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    response = client.patch(
+        f'/api/notifications/{notification.notification_id}/status',
+        json={'status': 'Delivered'}
+    )
+
+    assert response.status_code == 200
+    assert response.json['notification']['status'] == 'Delivered'
+
+    saved = db.session.get(
+        Notification,
+        notification.notification_id
+    )
+
+    assert saved.status == 'Delivered'
+    assert saved.last_attempt_at is not None
+
+
+def test_invalid_notification_status_is_rejected(app_data):
+    app, ids = app_data
+    client = app.test_client()
+
+    notification = create_notification(
+        ids['customer_id'],
+        'Booking',
+        'Booking created'
+    )
+
+    login(
+        client,
+        'staff_notification@pes.edu',
+        'staff123'
+    )
+
+    response = client.patch(
+        f'/api/notifications/{notification.notification_id}/status',
+        json={'status': 'Unknown'}
+    )
+
+    assert response.status_code == 400
+
+    saved = db.session.get(
+        Notification,
+        notification.notification_id
+    )
+
+    assert saved.status == 'Pending'
+
+
 def test_invalid_notification_status_transition(app_data):
     app, ids = app_data
     client = app.test_client()
