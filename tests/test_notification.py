@@ -590,6 +590,8 @@ def test_system_generated_audit_log(app_data):
     assert saved is not None
     assert saved.actor_id == "SYSTEM"
     assert saved.action == "AUTO_PROMOTION"
+    assert saved.entity_type == "Booking"
+    assert saved.entity_id == "booking-001"
     assert saved.timestamp is not None
 
 
@@ -617,6 +619,9 @@ def test_record_audit_creates_valid_record(app_data):
 
     assert saved is not None
     assert saved.actor_id == ids['customer_id']
+    assert saved.entity_type == 'TestEntity'
+    assert saved.entity_id == 'test-001'
+    assert saved.timestamp is not None
 
 
 def test_record_audit_allows_system_actor(app_data):

@@ -464,6 +464,13 @@ def test_add_stock_creates_audit_log(client):
 
         assert audit is not None
         assert audit.actor_id == staff_id
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory is not None
+        assert audit.entity_id == inventory.inventory_id
+        assert audit.timestamp is not None
 
 
 def test_reserve_stock_creates_audit_log(client):
@@ -485,7 +492,13 @@ def test_reserve_stock_creates_audit_log(client):
 
         assert audit is not None
         assert audit.actor_id == staff_id
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
 
+        assert inventory is not None
+        assert audit.entity_id == inventory.inventory_id
+        assert audit.timestamp is not None
 
 def test_fulfil_stock_creates_audit_log(client):
     test_client, customer_id, medicine_id, staff_id = client
@@ -511,6 +524,13 @@ def test_fulfil_stock_creates_audit_log(client):
 
         assert audit is not None
         assert audit.actor_id == staff_id
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory is not None
+        assert audit.entity_id == inventory.inventory_id
+        assert audit.timestamp is not None
 
 
 def test_release_stock_creates_audit_log(client):
@@ -537,6 +557,13 @@ def test_release_stock_creates_audit_log(client):
 
         assert audit is not None
         assert audit.actor_id == staff_id
+        inventory = Inventory.query.filter_by(
+            medicine_id=medicine_id
+        ).first()
+
+        assert inventory is not None
+        assert audit.entity_id == inventory.inventory_id
+        assert audit.timestamp is not None
 
 
 def create_prescription_booking(
