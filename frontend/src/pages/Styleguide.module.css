@@ -1,0 +1,82 @@
+.page {
+  min-height: 100vh;
+  background: var(--p47-bg);
+}
+
+.header {
+  background: linear-gradient(135deg, var(--p47-navy) 0%, var(--p47-navy-700) 100%);
+  color: var(--p47-white);
+  padding: var(--p47-space-7) 0 var(--p47-space-6);
+  box-shadow: var(--p47-shadow-md);
+}
+.title {
+  font-size: var(--p47-fs-3xl);
+  font-weight: var(--p47-fw-bold);
+  letter-spacing: -0.5px;
+}
+.lead {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: var(--p47-fs-md);
+}
+.health {
+  display: flex;
+  align-items: center;
+  gap: var(--p47-space-2);
+  background: rgba(255, 255, 255, 0.1);
+  padding: var(--p47-space-2) var(--p47-space-3);
+  border-radius: var(--p47-radius-pill);
+}
+.healthLabel {
+  font-size: var(--p47-fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.healthText {
+  font-size: var(--p47-fs-sm);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.main {
+  padding: var(--p47-space-6) 0 var(--p47-space-9);
+}
+.section { }
+
+.h1 { font-size: var(--p47-fs-3xl); font-weight: var(--p47-fw-bold); color: var(--p47-text-strong); }
+.h2 { font-size: var(--p47-fs-2xl); font-weight: var(--p47-fw-semibold); color: var(--p47-text-strong); }
+.h3 { font-size: var(--p47-fs-xl); font-weight: var(--p47-fw-semibold); color: var(--p47-navy); }
+.body { font-size: var(--p47-fs-base); color: var(--p47-text); }
+.muted { font-size: var(--p47-fs-sm); color: var(--p47-muted); }
+
+.swatch { display: flex; flex-direction: column; gap: var(--p47-space-2); }
+.swatchFill {
+  height: 56px;
+  border-radius: var(--p47-radius-md);
+  border: 1px solid var(--p47-border);
+}
+.swatchName { font-size: var(--p47-fs-sm); color: var(--p47-muted); }
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--p47-space-5);
+}
+.modalBody {
+  color: var(--p47-text);
+  font-size: var(--p47-fs-base);
+  margin: 0;
+}
+.modalBody code {
+  background: var(--p47-surface-2);
+  padding: 1px 5px;
+  border-radius: var(--p47-radius-sm);
+  font-size: 0.9em;
+}
+
+@media (max-width: 720px) {
+  .formGrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .title { font-size: var(--p47-fs-2xl); }
+  .header { padding: var(--p47-space-6) 0; }
+}

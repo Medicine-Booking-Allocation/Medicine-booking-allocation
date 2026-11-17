@@ -1,0 +1,12 @@
+.container {
+  width: 100%;
+  max-width: var(--p47-container);
+  margin: 0 auto;
+  padding: 0 var(--p47-space-6);
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 0 var(--p47-space-4);
+  }
+}

@@ -1,0 +1,22 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p47-space-2);
+}
+.label {
+  font-size: var(--p47-fs-sm);
+  font-weight: var(--p47-fw-medium);
+  color: var(--p47-text-strong);
+}
+.required {
+  color: var(--p47-danger);
+  margin-left: 2px;
+}
+.hint {
+  font-size: var(--p47-fs-xs);
+  color: var(--p47-muted);
+}
+.error {
+  font-size: var(--p47-fs-xs);
+  color: var(--p47-danger);
+}

@@ -1,0 +1,10 @@
+.header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--p47-space-4); flex-wrap: wrap; margin-bottom: var(--p47-space-5);
+}
+.title {
+  font-size: var(--p47-fs-2xl); font-weight: var(--p47-fw-bold);
+  color: var(--p47-text-strong); line-height: var(--p47-lh-tight);
+}
+.subtitle { color: var(--p47-muted); font-size: var(--p47-fs-sm); margin-top: var(--p47-space-1); }
+.actions { display: flex; gap: var(--p47-space-2); align-items: center; }

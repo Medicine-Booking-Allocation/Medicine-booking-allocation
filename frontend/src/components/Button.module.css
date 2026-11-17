@@ -1,0 +1,67 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--p47-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--p47-radius-md);
+  font-family: inherit;
+  font-weight: var(--p47-fw-semibold);
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--p47-transition),
+    border-color var(--p47-transition),
+    color var(--p47-transition),
+    box-shadow var(--p47-transition),
+    transform var(--p47-transition);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn:disabled:active {
+  transform: none;
+}
+
+/* Sizes */
+.size_sm { padding: 6px 10px; font-size: var(--p47-fs-sm); }
+.size_md { padding: 9px 16px; font-size: var(--p47-fs-base); }
+.size_lg { padding: 12px 22px; font-size: var(--p47-fs-md); }
+
+/* Variants */
+.variant_primary { background: var(--p47-navy); color: var(--p47-white); }
+.variant_primary:hover:not(:disabled) { background: var(--p47-navy-700); }
+
+.variant_secondary {
+  background: var(--p47-white);
+  color: var(--p47-navy);
+  border-color: var(--p47-border-strong);
+}
+.variant_secondary:hover:not(:disabled) {
+  background: var(--p47-surface-2);
+  border-color: var(--p47-teal);
+}
+
+.variant_success { background: var(--p47-green-600); color: var(--p47-white); }
+.variant_success:hover:not(:disabled) { background: #138a44; }
+
+.variant_danger { background: var(--p47-danger); color: var(--p47-white); }
+.variant_danger:hover:not(:disabled) { background: #b91c1c; }
+
+.variant_ghost { background: transparent; color: var(--p47-navy); }
+.variant_ghost:hover:not(:disabled) { background: var(--p47-surface-2); }
+
+.variant_subtle { background: var(--p47-teal-100); color: var(--p47-teal-600); }
+.variant_subtle:hover:not(:disabled) { background: var(--p47-teal-300); }
+
+.fullWidth { width: 100%; }
+.loading { position: relative; }
+.spinnerWrap { display: inline-flex; align-items: center; }
+.icon { display: inline-flex; align-items: center; }
+.label { display: inline-block; }

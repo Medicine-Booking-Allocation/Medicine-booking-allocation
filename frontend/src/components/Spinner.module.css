@@ -1,0 +1,19 @@
+.spinner {
+  display: inline-block;
+  border-style: solid;
+  border-radius: 50%;
+  animation: p47spin 0.7s linear infinite;
+}
+
+.size_sm { width: 14px; height: 14px; border-width: 2px; }
+.size_md { width: 20px; height: 20px; border-width: 2.5px; }
+.size_lg { width: 32px; height: 32px; border-width: 3px; }
+
+.tone_inherit { border-color: currentColor; border-top-color: transparent; }
+.tone_navy { border-color: var(--p47-navy); border-top-color: transparent; }
+.tone_teal { border-color: var(--p47-teal); border-top-color: transparent; }
+.tone_white { border-color: var(--p47-white); border-top-color: transparent; }
+
+@keyframes p47spin {
+  to { transform: rotate(360deg); }
+}

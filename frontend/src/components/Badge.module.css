@@ -1,0 +1,28 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--p47-radius-pill);
+  font-weight: var(--p47-fw-semibold);
+  line-height: 1;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.size_md { padding: 4px 10px; font-size: var(--p47-fs-sm); }
+.size_sm { padding: 3px 8px; font-size: var(--p47-fs-xs); }
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tone_neutral { background: var(--p47-neutral-bg); color: var(--p47-neutral); }
+.tone_navy { background: rgba(10, 37, 64, 0.08); color: var(--p47-navy); }
+.tone_teal { background: var(--p47-teal-100); color: var(--p47-teal-600); }
+.tone_green { background: var(--p47-green-100); color: var(--p47-green-600); }
+.tone_amber { background: var(--p47-warning-bg); color: var(--p47-warning); }
+.tone_red { background: var(--p47-danger-bg); color: var(--p47-danger); }
+.tone_blue { background: var(--p47-info-bg); color: var(--p47-info); }

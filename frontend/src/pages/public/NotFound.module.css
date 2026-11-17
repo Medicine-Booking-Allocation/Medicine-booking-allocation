@@ -1,0 +1,27 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--p47-space-6);
+  background: var(--p47-bg);
+  gap: var(--p47-space-2);
+}
+.code {
+  font-size: 72px;
+  font-weight: var(--p47-fw-bold);
+  color: var(--p47-navy);
+  line-height: 1;
+}
+.title {
+  font-size: var(--p47-fs-2xl);
+  font-weight: var(--p47-fw-semibold);
+  color: var(--p47-text-strong);
+}
+.text {
+  color: var(--p47-muted);
+  font-size: var(--p47-fs-base);
+  margin-bottom: var(--p47-space-4);
+}

@@ -1,0 +1,154 @@
+/*
+ * Project 47 — Design tokens (full).
+ *
+ * Single source of truth for the medical theme: navy blue, white, soft teal
+ * and subtle green accents. Consumed by every CSS Module via var(--p47-*).
+ */
+
+:root {
+  /* ---- Brand palette ---- */
+  --p47-navy: #0a2540;
+  --p47-navy-700: #0e3a5f;
+  --p47-navy-600: #16466e;
+  --p47-navy-500: #1f5a87;
+  --p47-navy-400: #3b77a3;
+
+  --p47-teal: #14b8a6;
+  --p47-teal-600: #0d9488;
+  --p47-teal-300: #5eead4;
+  --p47-teal-100: #cffaf3;
+
+  --p47-green: #22c55e;
+  --p47-green-600: #16a34a;
+  --p47-green-100: #dcfce7;
+
+  --p47-white: #ffffff;
+
+  /* ---- Neutrals ---- */
+  --p47-bg: #f4f7f9;
+  --p47-surface: #ffffff;
+  --p47-surface-2: #f6f9fa;
+  --p47-text: #1f2a37;
+  --p47-text-strong: #0f1b2d;
+  --p47-muted: #5b6b7b;
+  --p47-muted-2: #8190a0;
+  --p47-border: #e2eef0;
+  --p47-border-strong: #cfdde2;
+  --p47-overlay: rgba(8, 22, 40, 0.55);
+
+  /* ---- Semantic / status tones ---- */
+  --p47-info: #2563eb;
+  --p47-info-bg: #e8f0fe;
+  --p47-success: #16a34a;
+  --p47-success-bg: #e6f6ec;
+  --p47-warning: #d97706;
+  --p47-warning-bg: #fdf3e3;
+  --p47-danger: #dc2626;
+  --p47-danger-bg: #fdeaea;
+  --p47-neutral: #64748b;
+  --p47-neutral-bg: #eef2f5;
+
+  /* ---- Typography ---- */
+  --p47-font: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --p47-fs-xs: 12px;
+  --p47-fs-sm: 13px;
+  --p47-fs-base: 15px;
+  --p47-fs-md: 16px;
+  --p47-fs-lg: 18px;
+  --p47-fs-xl: 20px;
+  --p47-fs-2xl: 24px;
+  --p47-fs-3xl: 30px;
+  --p47-lh-tight: 1.2;
+  --p47-lh-snug: 1.35;
+  --p47-lh-normal: 1.5;
+  --p47-fw-normal: 400;
+  --p47-fw-medium: 500;
+  --p47-fw-semibold: 600;
+  --p47-fw-bold: 700;
+
+  /* ---- Spacing (4px base) ---- */
+  --p47-space-1: 4px;
+  --p47-space-2: 8px;
+  --p47-space-3: 12px;
+  --p47-space-4: 16px;
+  --p47-space-5: 20px;
+  --p47-space-6: 24px;
+  --p47-space-7: 32px;
+  --p47-space-8: 40px;
+  --p47-space-9: 48px;
+  --p47-space-10: 64px;
+
+  /* ---- Radii ---- */
+  --p47-radius-sm: 6px;
+  --p47-radius-md: 10px;
+  --p47-radius-lg: 14px;
+  --p47-radius-xl: 20px;
+  --p47-radius-pill: 999px;
+
+  /* ---- Shadows ---- */
+  --p47-shadow-sm: 0 1px 2px rgba(10, 37, 64, 0.06), 0 1px 3px rgba(10, 37, 64, 0.08);
+  --p47-shadow-md: 0 4px 12px rgba(10, 37, 64, 0.08);
+  --p47-shadow-lg: 0 12px 28px rgba(10, 37, 64, 0.12);
+  --p47-shadow-xl: 0 20px 45px rgba(10, 37, 64, 0.22);
+
+  /* ---- Transitions ---- */
+  --p47-transition: 160ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Z-index scale ---- */
+  --p47-z-toast: 1100;
+  --p47-z-modal: 1000;
+
+  /* ---- Layout ---- */
+  --p47-container: 1120px;
+  --p47-sidebar: 248px;
+  --p47-header-h: 60px;
+}
+
+/* ---- Reset ---- */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: var(--p47-font);
+  color: var(--p47-text);
+  background: var(--p47-bg);
+  font-size: var(--p47-fs-base);
+  line-height: var(--p47-lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, p {
+  margin: 0;
+}
+
+a {
+  color: var(--p47-navy-600);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--p47-navy);
+}
+
+button {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(20, 184, 166, 0.5);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--p47-teal-300);
+  color: var(--p47-navy);
+}

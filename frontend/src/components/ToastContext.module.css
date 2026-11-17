@@ -1,0 +1,19 @@
+.viewport {
+  position: fixed;
+  top: var(--p47-space-5);
+  right: var(--p47-space-5);
+  z-index: var(--p47-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--p47-space-3);
+  width: 340px;
+  max-width: calc(100vw - 2 * var(--p47-space-5));
+}
+
+@media (max-width: 480px) {
+  .viewport {
+    left: var(--p47-space-4);
+    right: var(--p47-space-4);
+    width: auto;
+  }
+}

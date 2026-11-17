@@ -1,0 +1,16 @@
+.card { height: 100%; }
+.body {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--p47-space-3); padding: var(--p47-space-5);
+}
+.label { font-size: var(--p47-fs-sm); color: var(--p47-muted); margin: 0; }
+.value { font-size: var(--p47-fs-2xl); font-weight: var(--p47-fw-bold); color: var(--p47-text-strong); margin: 2px 0 0; }
+.hint { font-size: var(--p47-fs-xs); color: var(--p47-muted-2); margin: 4px 0 0; }
+.icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: var(--p47-radius-md); flex: 0 0 auto;
+}
+.tone_navy { background: rgba(10, 37, 64, 0.08); color: var(--p47-navy); }
+.tone_teal { background: var(--p47-teal-100); color: var(--p47-teal-600); }
+.tone_green { background: var(--p47-green-100); color: var(--p47-green-600); }
+.tone_blue { background: var(--p47-info-bg); color: var(--p47-info); }
